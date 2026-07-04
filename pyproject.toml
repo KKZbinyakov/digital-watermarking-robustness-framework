@@ -1,0 +1,52 @@
+[build-system]
+requires = ["setuptools>=42"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dwarf"
+version = "0.0.1"
+description = "Фреймворк для автоматизированной оценки устойчивости алгоритмов встраивания цифровых водяных знаков."
+readme = "README.md"
+requires-python = ">=3.9"
+license = {text = "MIT"}
+authors = [
+    {name = "Збиняков Кирилл Константинович", email = "kkzbiniakov@edu.hse.ru"},
+    {name = "Сидоров Евгений Александрович", email = "easidorov@edu.hse.ru"},
+    {name = "Горенкин Евгений Алексеевич", email = "eagorenkin@edu.hse.ru"},
+    {name = "Полинов Сергей Васильевич", email = "svpolinov@edu.hse.ru"},
+    {name = "Большеглазов Максим Ильич", email = "mibolsheglazov@edu.hse.ru"},
+
+]
+dependencies = [      # Эти зависимости устанавливаются при установке пакета
+    "cython>=3.0.0",
+    "numpy>=2.4.4",
+]
+
+[project.optional-dependencies]  # Эти зависимости устанавливаются при установке пакета с опциональными зависимостями pip install dwarf[ready_solutions]
+ready_solutions = [ # Список есть в документе Жени, пока сюда не буду всё записывать
+    "scipy>=1.10.0",
+    "pytorch>=2.0.0",
+]
+dev = [      # Это зависимости для разработки
+    "pytest>=7.0.0",
+    "black>=22.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.urls]     # Ссылки на дополнительную информацию, у нас пока ничего нет, мб потом сделаем.
+Homepage = "https://github.com/KKZbinyakov/digital-watermarking-robustness-framework"
+# Documentation = "https://readthedocs.io"
+
+# Настройки для инструментов разработки (например, Ruff, Black, Pytest)
+[tool.black]
+line-length = 88
+target-version = ['py39']
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+addopts = "--cov=dwarf"
+testpaths = [
+    "tests",
+]
