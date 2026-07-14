@@ -1,0 +1,21 @@
+Metadata-Version: 2.4
+Name: dwarf
+Version: 0.0.1
+Summary: Фреймворк для автоматизированной оценки устойчивости алгоритмов встраивания цифровых водяных знаков.
+Author-email: Збиняков Кирилл Константинович <kkzbiniakov@edu.hse.ru>, Сидоров Евгений Александрович <easidorov@edu.hse.ru>, Горенкин Евгений Алексеевич <eagorenkin@edu.hse.ru>, Полинов Сергей Васильевич <svpolinov@edu.hse.ru>, Большеглазов Максим Ильич <mibolsheglazov@edu.hse.ru>
+License: MIT
+Project-URL: Homepage, https://github.com/KKZbinyakov/digital-watermarking-robustness-framework
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: cython>=3.0.0
+Requires-Dist: numpy>=1.24
+Provides-Extra: ready-solutions
+Requires-Dist: scipy>=1.10.0; extra == "ready-solutions"
+Requires-Dist: Pillow>=10.0; extra == "ready-solutions"
+Requires-Dist: torch>=2.0.0; extra == "ready-solutions"
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: black>=22.0; extra == "dev"
+Requires-Dist: pytest-cov>=4.0; extra == "dev"
+Dynamic: license-file

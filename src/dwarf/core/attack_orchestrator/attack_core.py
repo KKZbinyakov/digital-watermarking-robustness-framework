@@ -1,4 +1,4 @@
-from src.dwarf.core.utils.utils import *
+from ..utils.utils import import_function
 
 class AttackCore:
     def __init__(self):

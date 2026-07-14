@@ -19,17 +19,19 @@ authors = [
 ]
 dependencies = [      # Эти зависимости устанавливаются при установке пакета
     "cython>=3.0.0",
-    "numpy>=2.4.4",
+    "numpy>=1.24",
 ]
 
 [project.optional-dependencies]  # Эти зависимости устанавливаются при установке пакета с опциональными зависимостями pip install dwarf[ready_solutions]
 ready_solutions = [ # Список есть в документе Жени, пока сюда не буду всё записывать
     "scipy>=1.10.0",
-    "pytorch>=2.0.0",
+    "Pillow>=10.0",
+    "torch>=2.0.0",
 ]
 dev = [      # Это зависимости для разработки
     "pytest>=7.0.0",
     "black>=22.0",
+    "pytest-cov>=4.0",
 ]
 
 [tool.setuptools.packages.find]
