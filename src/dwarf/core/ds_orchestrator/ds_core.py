@@ -8,7 +8,7 @@ from ..utils.utils import import_function
 SUPPORTED_EXTENSIONS: tuple = (".png", ".bmp", ".tiff", ".tif", ".ppm")
 
 
-class ds_core:
+class Ds_Core:
     """
     Оркестратор датасетов (dataset orchestrator).
 
