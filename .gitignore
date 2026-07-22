@@ -1,1 +1,38 @@
-test and something other
+# ---- Python bytecode / cache ----
+__pycache__/
+*.py[cod]
+*$py.class
+
+# ---- Packaging / build artifacts ----
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# ---- Test / coverage artifacts ----
+.coverage
+.coverage.*
+htmlcov/
+.pytest_cache/
+.tox/
+
+# ---- Virtual environments ----
+.venv/
+venv/
+env/
+ENV/
+
+# ---- Editor / IDE ----
+.vscode/
+.idea/
+*.swp
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+
+# ---- Generated run outputs (framework results) ----
+embeded.jpg
+croped.jpg
+logs/*.log
