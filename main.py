@@ -5,39 +5,30 @@
 # sys.path.insert(0, str(PROJECT_DIR))
 # sys.path.insert(0, str(PROJECT_DIR / "src"))
 
-import src.dwarf as dwarf
+from src.dwarf import *
+# import src.dwarf as dwarf
 import src.dwarf.ready_solutions as ready
 
+from src.dwarf.ready_solutions.attack_solutions.crop import Crop
+from src.dwarf.ready_solutions.embedding_solutions.lsb import LSB
+from src.dwarf.ready_solutions.expertise_solutions.ber import BER
+from src.dwarf.core.attack_orchestrator.attack_core import Ready_Geometric_Attacks
+
 if __name__ == "__main__":
-    Attack_Core = dwarf.Attack_Core()
-    Embedding_Core = dwarf.Embedding_Core()
-    Expertise_Core = dwarf.Expertise_Core()
+    exp_obj = Expertise_Core.BER
+    emb_obj = Embedding_Core.LSB
+    obj = Attack_Core.Crop
 
-    Attack_Core.connect_ready_attacks(connect_all=True)
-    Embedding_Core.connect_ready_embeddings(connect_all=True)
-    Expertise_Core.connect_ready_expertises(connect_all=True)
+    print(emb_obj.__name__)
+    print(obj.__name__)
+    print(exp_obj.__name__)
 
-    # solutions_dir = PROJECT_DIR / "src" / "dwarf" / "ready_solutions"
+    print(Attack_Core.get_all_attacks())
 
-    # Attack_Core.get_new_attack({
-    #     "crop": str(solutions_dir / "attack_solutions" / "crop.py")
-    # })
-    # Embedding_Core.get_new_embedding({
-    #     "embed_and_extract": str(solutions_dir / "embedding_solutions" / "embed_and_extract.py")
-    # })
-    # Expertise_Core.get_new_expertise({
-    #     "ber": str(solutions_dir / "expertise_solutions" / "ber.py")
-    # })
-
-    Attack_Core.get_all_available_attacks()
-    Embedding_Core.get_all_available_embeddings()
-    # print(Embedding_Core.available_embeddings["spatial_embeddings"])
-    Expertise_Core.get_all_available_expertise()
-
-    Embedding_Core.spatial_embeddings.Ready_Spatial_Embeddings.embed_lsb("Asuka.jpg", "1000110100000000000000000000000010001101000000000000000000000000", "embeded.jpg")
-    # Attack_Core.available_attacks["geometric_attacks"].Ready_Geometric_Attacks.crop_attack("embeded.jpg", "croped.jpg")
-    Attack_Core.geometric_attacks.Ready_Geometric_Attacks.crop_attack("embeded.jpg", "croped.jpg")
-    result = Embedding_Core.spatial_embeddings.Ready_Spatial_Embeddings.extract_lsb("croped.jpg", 32)
-    print("BER:", Expertise_Core.robustness_expertises.Ready_Robustness_Expertise.ber("10001101000000000000000000000000", result))
+    Embedding_Core.LSB.embedding(args={"image_path": "Asuka.jpg", "watermark_bits": "1000110100000000000000000000000010001101000000000000000000000000", "output_path": "embeded.jpg"})
+    Attack_Core.Crop.attack(args={"input_data": "embeded.jpg", "output_data": "croped.jpg"})
+    Attack_Core.use_attacks({"Crop": {"input_data": "embeded.jpg", "output_data": "croped.jpg"}})
+    result = Embedding_Core.LSB.extraction(args={"input_data": "croped.jpg", "num_bits": 32})
+    print("BER:", Expertise_Core.BER.expertise(args={"original_bits": "10001101000000000000000000000000", "extracted_bits": result}))
 
     pass

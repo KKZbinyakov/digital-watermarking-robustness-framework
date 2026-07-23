@@ -1,45 +1,67 @@
 from src.dwarf.core.utils.utils import *
 
-if TYPE_CHECKING:
-    from src.dwarf.ready_solutions.expertise_solutions.robustness_solutions import Ready_Robustness_Expertise
+class Expertise_Core_Meta(abc.ABCMeta):
+    def __getattr__(cls, name: str): 
+        if name in cls._registered_expertises:
+            return cls._registered_expertises[name]
+        raise AttributeError(f"{cls.__name__} has no attribute {name}")
 
+class Expertise_Core(abc.ABC, metaclass=Expertise_Core_Meta):
+    """
+    Класс, содержащий в себе все готовые решения для экспертизы.
 
-class Expertise_Core:
+    Attributes:
+    _registered_expertises : dict
+        Словарь, содержащий в себе все готовые решения для экспертизы.
 
-    if TYPE_CHECKING:
-        robustness_expertises: Ready_Robustness_Expertise
+    Methods:
+    __init_subclass__(cls, **kwargs) 
+        Регистрирует экспертизу в словаре _registered_expertises.
+    get_registered_expertises()
+        Возвращает словарь _registered_expertises.
+    get_all_expertises(cls)
+        Возвращает все экспертизы, наследуемые от cls.
+    expertise(args: dict = {
+        "original_bits": None,
+        "extracted_bits": None
+    }): 
+        Абстрактный метод экспертизы, который должен быть реализован в каждом подклассе.
 
-    def __init__(self):
-        self.available_expertise: dict = {}
-        self.ready_expertise_types: dict = {
-            "imperceptibility_expertises": str(DWARF_DIR) + r"\ready_solutions\expertise_solutions\imperceptibility_solutions.py",
-            "robustness_expertises": str(DWARF_DIR) + r"\ready_solutions\expertise_solutions\robustness_solutions.py",
-        }
+    """
+    _registered_expertises = {}
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        Expertise_Core._registered_expertises[cls.__name__] = cls
+
+    def get_registered_expertises():
+        return Expertise_Core._registered_expertises
+
+    @classmethod
+    def get_all_expertises(cls):
+        return cls.__subclasses__()
+
+    @staticmethod
+    @abc.abstractmethod
+    def expertise(args: dict = {
+        "original_bits": None,
+        "extracted_bits": None
+    }): 
         pass
 
-    def __getattr__(self, expertise_type: str):
-        if expertise_type in self.available_expertise:
-            return self.available_expertise[expertise_type]
-        else:
-            raise AttributeError
+    def get_expertise_class_by_name(expertise_name: str):
+        return Expertise_Core._registered_expertises[expertise_name]
 
-    def get_new_expertise(self, expertises: dict):
+    def use_expertises(expertises: dict):
+        all_expertises = expertises.keys()
+        for expertise_name in all_expertises:
+            Expertise_Core.get_expertise_class_by_name(expertise_name).expertise(expertises[expertise_name])
 
-        for expertise in expertises:
-            # self.available_expertise[expertise[expertise.rfind("\\", 0, len(expertise)) + 1:]] = import_function()
-            self.available_expertise[expertise] = import_function(expertise, expertises[expertise])
-        return
-    
-    def get_all_available_expertise(self):
-        for expertise in self.available_expertise:
-            print(expertise)
-        return
-    
-    def connect_ready_expertises(self, expertises_type: list = [], connect_all: bool = False):
-        for expertise in expertises_type:
-            self.available_expertise[expertise] = import_function(expertise, self.ready_expertise_types[expertise])
-
-        if connect_all:
-            for expertise in self.ready_expertise_types:
-                self.available_expertise[expertise] = import_function(expertise, self.ready_expertise_types[expertise])
-        return
+class Ready_Robustness_Expertise(Expertise_Core):
+    """
+    Класс, содержащий в себе все готовые решения для экспертизы робастности.
+    """
+class Ready_Imperceptibility_Expertise(Expertise_Core):
+    """
+    Класс, содержащий в себе все готовые решения для экспертизы невидимости.
+    """

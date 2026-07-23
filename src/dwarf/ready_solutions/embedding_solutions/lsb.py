@@ -1,10 +1,15 @@
 from src.dwarf.ready_solutions.utils.utils import *
 
-class Ready_Spatial_Embeddings:
-    """
-    Класс, содержащий в себе все готовые пространственные решения встраиваний.
-    """
-    def embed_lsb(image_path, watermark_bits, output_path):
+class LSB(Ready_Spatial_Embeddings):
+    @staticmethod
+    def embedding(args: dict = {
+        "image_path": None,
+        "watermark_bits": None,
+        "output_path": None
+    }):
+        image_path = args["image_path"]
+        watermark_bits = args["watermark_bits"]
+        output_path = args["output_path"]
         """
         Встраивает биты ЦВЗ в младшие биты всех каналов RGB изображения.
         :param image_path: путь к исходному изображению
@@ -27,13 +32,19 @@ class Ready_Spatial_Embeddings:
         result.save(output_path)
         #опционально можно сразу ретурнить, но пока так
 
-    def extract_lsb(image_path, num_bits):
+    @staticmethod
+    def extraction(args: dict = {
+        "input_data": None,
+        "num_bits": None
+    }):
         """
         Извлекает указанное количество бит из младших бит всех каналов RGB.
         :param image_path: путь к изображению (с встроенным ЦВЗ)
         :param num_bits: сколько бит извлечь
         :return: строка из '0' и '1'
         """
+        image_path = args["input_data"]
+        num_bits = args["num_bits"]
         img = Image.open(image_path).convert('RGB')
         data = np.array(img)
         flat = data.ravel()

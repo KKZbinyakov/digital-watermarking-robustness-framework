@@ -1,43 +1,108 @@
 from src.dwarf.core.utils.utils import *
 
-if TYPE_CHECKING:
-    from src.dwarf.ready_solutions.attack_solutions.geometric_attacks import Ready_Geometric_Attacks
+class Attack_Core_Meta(abc.ABCMeta):
+    def __getattr__(cls, name: str): 
+        if name in cls._registered_attacks:
+            return cls._registered_attacks[name]
+        raise AttributeError(f"{cls.__name__} has no attribute {name}")
 
-class Attack_Core:
+class Attack_Core(abc.ABC, metaclass=Attack_Core_Meta):
+    """
+    Класс-оркестратор атак.
+    От него наследуются все типы атак. От каждого типа атак наследуются классы конкретных атак.
 
-    if TYPE_CHECKING:
-        geometric_attacks: Ready_Geometric_Attacks
-    def __init__(self):
-        self.available_attacks: dict[str, Any] = {}
+    Attributes:
+        _registered_attacks (dict): Словарь, в котором хранятся все зарегистрированные атаки.
 
-        self.ready_attack_types: dict = {
-            "geometric_attacks": str(DWARF_DIR) + r"\ready_solutions\attack_solutions\geometric_attacks.py",
-        }
+    Methods:
+        __init_subclass__(cls, **kwargs): 
+            Регистрирует атаку в словаре _registered_attacks.
+        get_registered_attacks(): 
+            Возвращает словарь _registered_attacks.
+        get_all_attacks(cls): 
+            Возвращает все атаки, наследуемые от cls.
+        attack(args: dict = {
+            "input_data": None,
+            "output_data": None
+        }): 
+            Абстрактный метод атак, который должен быть реализован в каждом подклассе.
+
+    """
+    _registered_attacks = {}
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        Attack_Core._registered_attacks[cls.__name__] = cls
+
+    def get_registered_attacks():
+        return Attack_Core._registered_attacks
+
+    @classmethod
+    def get_all_attacks(cls):
+        return cls.__subclasses__()
+
+    @staticmethod
+    @abc.abstractmethod
+    def attack(args: dict = {
+        "input_data": None,
+        "output_data": None
+    }): 
         pass
 
-    def __getattr__(self, attack_type: str):
-        if attack_type in self.available_attacks:
-            return self.available_attacks[attack_type]
-        else:
-            raise AttributeError
+    def get_attack_class_by_name(attack_name: str):
+        return Attack_Core._registered_attacks[attack_name]
 
-    def get_new_attack(self, attacks: dict):
+    def use_attacks(attacks: dict):
+        all_attacks = attacks.keys()
+        for attack_name in all_attacks:
+            Attack_Core.get_attack_class_by_name(attack_name).attack(attacks[attack_name])
 
-        for attack in attacks:
-            # self.available_attacks[attack[attack.rfind("\\", 0, len(attack)) + 1:]] = import_function()
-            self.available_attacks[attack] = import_function(attack, attacks[attack])
-        return
-    
-    def get_all_available_attacks(self):
-        for attack in self.available_attacks:
-            print(attack)
-        return
-    
-    def connect_ready_attacks(self, attacks_type: list = [], connect_all: bool = False):
-        for attack in attacks_type:
-            self.available_attacks[attack] = import_function(attack, self.ready_attack_types[attack])
+class Ready_Geometric_Attacks(Attack_Core):
+    """
+    Класс с готовыми геометрическими атаками.
+    """
 
-        if connect_all:
-            for attack in self.ready_attack_types:
-                self.available_attacks[attack] = import_function(attack, self.ready_attack_types[attack])
-        return
+class Ready_Noise_Attacks(Attack_Core):
+    """
+    Класс с готовыми шумовыми атаками.
+    """
+
+class Ready_Filtering_Attacks(Attack_Core):
+    """
+    Класс с готовыми фильтрационными атаками.
+    """
+
+class Ready_Compression_Attacks(Attack_Core):
+    """
+    Класс с готовыми сжатием атаками.
+    """
+
+class Ready_Color_Brightness_Attacks(Attack_Core):
+    """
+    Класс с готовыми атаками изменения яркости.
+    """
+
+class Ready_SOTA_Attacks(Attack_Core):
+    """
+    Класс с готовыми SOTA атаками.
+    """
+
+class Ready_Watermark_Removal_Networks_Attacks(Attack_Core):
+    """
+    Класс с готовыми атаками Watermark Removal Networks.
+    """
+
+class Ready_Adversarial_Examples_Attacks(Attack_Core):
+    """
+    Класс с готовыми адверсариальными примерами.
+    """
+
+class Ready_Collage_Synchronization_Attacks(Attack_Core):
+    """
+    Класс с готовыми атаками синхронизации коллажа.
+    """
+
+class Ready_Physical_Attacks(Attack_Core):
+    """
+    Класс с готовыми физическими атаками.
+    """

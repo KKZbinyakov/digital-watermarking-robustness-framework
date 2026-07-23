@@ -1,11 +1,8 @@
-class Ready_Robustness_Expertise():
-    """
-    Класс, содержащий в себе все готовые решения для экспертизы робастности.
-    """
-    def __init__(self):
-        pass
+from src.dwarf.ready_solutions.utils.utils import *
 
-    def ber(original_bits, extracted_bits):
+class BER(Ready_Robustness_Expertise):
+    @staticmethod
+    def expertise(args: dict = {"original_bits": None, "extracted_bits": None}):
         """
         Вычисляет Bit Error Rate (BER) между двумя битовыми строками.
         Если длины не совпадают, сравнение происходит по минимальной длине.
@@ -13,6 +10,8 @@ class Ready_Robustness_Expertise():
         :param extracted_bits: строка из '0' и '1' (извлечённый ЦВЗ)
         :return: значение BER (float от 0 до 1)
         """
+        original_bits = args["original_bits"]
+        extracted_bits = args["extracted_bits"]
         min_len = min(len(original_bits), len(extracted_bits))
         if min_len == 0:
             return 1.0  # или 0.0? По соглашению — 1.0 (полная ошибка)
@@ -23,11 +22,5 @@ class Ready_Robustness_Expertise():
         errors = (o ^ e).bit_count()
         ber = errors / min_len
         return ber
-    
-    def nc():
-        return
-    
-    def accuracy():
-        return
     
     # и тд
