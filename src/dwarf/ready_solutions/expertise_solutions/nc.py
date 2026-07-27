@@ -1,12 +1,9 @@
 from ..utils.expertise_utils import *
 
 
-class BER(Ready_Robustness_Expertise):
+class NC(Ready_Robustness_Expertise):
     """
-    Bit Error Rate — доля неверно восстановленных бит ЦВЗ.
-
-    Основная метрика стойкости: 0 означает точное восстановление, 0.5 —
-    результат, неотличимый от случайного угадывания, 1 — полную инверсию.
+    Normalized Correlation — нормированная корреляция исходного и извлечённого ЦВЗ.
     """
 
     @staticmethod
@@ -15,7 +12,7 @@ class BER(Ready_Robustness_Expertise):
         "extracted_bits": None
     }):
         """
-        Считает долю несовпадающих бит между исходным и извлечённым ЦВЗ.
+        Считает нормированную корреляцию между исходным и извлечённым ЦВЗ.
 
         Args:
             args (dict): параметры метрики
@@ -24,7 +21,7 @@ class BER(Ready_Robustness_Expertise):
                 allow_length_mismatch (bool): сравнивать по общей части при разной длине (по умолчанию False)
 
         Returns:
-            float: значение BER в диапазоне от 0 до 1
+            float: значение NC в диапазоне от -1 до 1
 
         Raises:
             ValueError: если длины различаются без allow_length_mismatch, либо обе строки пусты
@@ -36,6 +33,7 @@ class BER(Ready_Robustness_Expertise):
         if length == 0:
             raise ValueError("нечего сравнивать: обе битовые строки пусты")
 
-        original = np.frombuffer(original_bits.encode("ascii"), dtype=np.uint8)
-        extracted = np.frombuffer(extracted_bits.encode("ascii"), dtype=np.uint8)
-        return float(np.count_nonzero(original != extracted) / length)
+        original = bits_to_pm1(original_bits)
+        extracted = bits_to_pm1(extracted_bits)
+        denominator = np.sqrt((original * original).sum() * (extracted * extracted).sum())
+        return float((original * extracted).sum() / denominator) if denominator else 0.0

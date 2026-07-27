@@ -36,3 +36,8 @@ Thumbs.db
 embeded.jpg
 croped.jpg
 logs/*.log
+
+# ---- Cython build artifacts ----
+src/**/*.c
+*.so
+*.pyd

@@ -1,0 +1,12 @@
+# Необязательные кодеки для атак сжатия.
+# Установка: pip install -r requirements-codecs.txt
+#
+# Без них атаки Heic и Avif поднимают RuntimeError с подсказкой, но остаются
+# в реестре и не ломают импорт пакета.
+#
+# Атакам Bpg и Flif нужны внешние бинарные файлы в PATH, через pip они недоступны:
+#   Bpg    bpgenc и bpgdec из libbpg
+#   Flif   утилита flif; формат заброшен, развитие перешло в JPEG XL
+
+pillow-heif>=0.13
+pillow-avif-plugin>=1.4

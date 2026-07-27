@@ -1,4 +1,4 @@
-from src.dwarf.ready_solutions.utils.utils import *
+from ..utils.attack_utils import *
 
 class Crop(Ready_Geometric_Attacks):
     @staticmethod

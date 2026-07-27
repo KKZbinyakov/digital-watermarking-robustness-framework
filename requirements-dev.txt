@@ -1,0 +1,30 @@
+# Зависимости для разработки и сборки.
+# Установка: pip install -r requirements-dev.txt
+#
+# Cython и setuptools нужны для сборки .pyx в .so. Помимо них требуется
+# компилятор C, который через pip не ставится:
+#   Debian/Ubuntu   sudo apt install build-essential python3-dev
+#   macOS           xcode-select --install
+#   Windows         Build Tools for Visual Studio, компонент C++ build tools
+
+-r requirements.txt
+
+Cython>=3.0.0
+setuptools>=42
+
+pytest>=7.0.0
+pytest-cov>=4.0
+black>=22.0
+
+# Эталонные реализации для сверки метрик в тестах. Без них соответствующие
+# проверки пропускаются, остальные работают.
+#   opencv-python-headless  CLAHE
+#   scikit-image            MSE, PSNR, SSIM
+#   sewar                   MS-SSIM
+#   scikit-learn            accuracy, precision, recall, F1, AUC
+#   pyrtools                steerable-пирамида sp5 и эталонный vifvec
+opencv-python-headless>=4.8
+scikit-image>=0.21
+sewar>=0.4.5
+scikit-learn>=1.3
+pyrtools>=1.0.3
