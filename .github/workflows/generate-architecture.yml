@@ -36,7 +36,7 @@ jobs:
       # Генерация: указываем путь docs/generate_tree.py
       - name: Generate tree
         run: |
-          python docs/generate_tree.py . docs/architecture.html
+          python docs/diagen.py . docs/architecture.html
           cp docs/architecture.html docs/index.html
 
       # Для PR: загружаем артефакт, но НЕ коммитим
@@ -93,7 +93,6 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          # Коммитим только сгенерированные файлы, НЕ весь docs/
           git add docs/architecture.html docs/index.html
           git commit -m "docs: auto-update architecture diagram [skip ci]"
           git push
