@@ -36,7 +36,7 @@ jobs:
       # Генерация: указываем путь docs/generate_tree.py
       - name: Generate tree
         run: |
-          python docs/diagen.py . docs/architecture.html
+          python diagen.py . docs/architecture.html
           cp docs/architecture.html docs/index.html
 
       # Для PR: загружаем артефакт, но НЕ коммитим
