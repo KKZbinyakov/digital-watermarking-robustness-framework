@@ -4,7 +4,7 @@ on:
   push:
     branches: [main, master]
     paths:
-      - '**.py'           # покрывает и src/**.py, и docs/generate_tree.py
+      - '**.py'
   pull_request:
     branches: [main, master]
     paths:
@@ -33,13 +33,19 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Генерация: указываем путь docs/generate_tree.py
+      - name: Prepare environment
+        run: |
+          mkdir -p docs
+          ls -la
+          test -f diagen.py || (echo "ERROR: diagen.py not found!" && exit 1)
+
       - name: Generate tree
         run: |
+          set -e
           python diagen.py . docs/architecture.html
           cp docs/architecture.html docs/index.html
+          ls -la docs/
 
-      # Для PR: загружаем артефакт, но НЕ коммитим
       - name: Upload artifact (PR preview)
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
@@ -54,7 +60,7 @@ jobs:
         with:
           script: |
             const runUrl = `${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}`;
-            const body = `**Architecture diagram updated.**\n\nDownload preview: [Artifacts → architecture-diagram](${runUrl})`;
+            const body = `🌳 **Architecture diagram updated.**\n\nDownload preview: [Artifacts → architecture-diagram](${runUrl})`;
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
               repo: context.repo.repo,
@@ -77,7 +83,6 @@ jobs:
               });
             }
 
-      # Только для push: проверяем изменения и коммитим ТОЛЬКО сгенерированные файлы
       - name: Check for changes
         if: github.event_name == 'push'
         id: check
