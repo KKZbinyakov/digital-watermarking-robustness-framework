@@ -1,0 +1,702 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DWARF Framework — Интерактивная архитектура</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: #0d1117;
+            color: #c9d1d9;
+            overflow: hidden;
+            width: 100vw;
+            height: 100vh;
+        }
+        #container {
+            width: 100%;
+            height: 100%;
+            position: relative;
+        }
+        svg {
+            width: 100%;
+            height: 100%;
+            cursor: grab;
+        }
+        svg:active { cursor: grabbing; }
+        
+        /* Линии связей */
+        .link {
+            fill: none;
+            stroke-opacity: 0.6;
+            stroke-width: 2px;
+            transition: all 0.3s ease;
+        }
+        .link.inheritance {
+            stroke: #58a6ff;
+            stroke-width: 3px;
+        }
+        .link.import {
+            stroke: #8b949e;
+            stroke-width: 1.5px;
+            stroke-dasharray: 6,4;
+        }
+        .link.highlighted {
+            stroke-opacity: 1;
+            stroke-width: 4px;
+            filter: drop-shadow(0 0 4px currentColor);
+        }
+        
+        /* Узлы */
+        .node circle {
+            stroke-width: 3px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        .node circle:hover {
+            filter: drop-shadow(0 0 8px currentColor);
+            transform: scale(1.15);
+        }
+        .node.collapsed circle {
+            stroke-dasharray: 4,2;
+        }
+        
+        /* Текст */
+        .node text {
+            font-size: 13px;
+            font-weight: 500;
+            fill: #f0f6fc;
+            text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+            pointer-events: none;
+        }
+        .node.collapsed text {
+            fill: #8b949e;
+        }
+        
+        /* Панель управления */
+        #controls {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            background: rgba(22,27,34,0.95);
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 16px;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+            max-width: 320px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+        }
+        #controls h1 {
+            font-size: 18px;
+            color: #f0f6fc;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        #controls .subtitle {
+            font-size: 12px;
+            color: #8b949e;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            margin: 6px 0;
+            color: #c9d1d9;
+        }
+        .legend-dot {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            border: 2px solid;
+            flex-shrink: 0;
+        }
+        .btn {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #c9d1d9;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-top: 8px;
+            margin-right: 6px;
+            transition: all 0.2s;
+        }
+        .btn:hover {
+            background: #30363d;
+            border-color: #58a6ff;
+        }
+        
+        /* Tooltip */
+        #tooltip {
+            position: absolute;
+            background: rgba(22,27,34,0.98);
+            border: 1px solid #30363d;
+            border-radius: 10px;
+            padding: 14px 18px;
+            max-width: 380px;
+            font-size: 13px;
+            line-height: 1.6;
+            color: #c9d1d9;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            z-index: 200;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            backdrop-filter: blur(10px);
+        }
+        #tooltip .tt-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: #f0f6fc;
+            margin-bottom: 6px;
+        }
+        #tooltip .tt-type {
+            display: inline-block;
+            font-size: 10px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            margin-bottom: 8px;
+            font-weight: 600;
+        }
+        #tooltip .tt-desc {
+            color: #8b949e;
+        }
+        
+        /* Подсветка пути */
+        .path-highlight {
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { stroke-opacity: 1; stroke-width: 4px; }
+            50% { stroke-opacity: 0.4; stroke-width: 2px; }
+        }
+        
+        /* Счетчик */
+        #counter {
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+            background: rgba(22,27,34,0.9);
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 12px;
+            color: #8b949e;
+            z-index: 100;
+        }
+        
+        /* Адаптив */
+        @media (max-width: 600px) {
+            #controls { max-width: 90vw; top: 8px; left: 8px; padding: 12px; }
+            #controls h1 { font-size: 15px; }
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <svg id="tree-svg"></svg>
+    </div>
+    
+    <div id="controls">
+        <h1>⚡ DWARF Framework</h1>
+        <div class="subtitle">
+            Интерактивная архитектура классов.<br>
+            <b>Клик</b> по узлу — свернуть/развернуть.<br>
+            <b>Колесо</b> — зум. <b>Drag</b> — панорама.
+        </div>
+        
+        <div style="border-top:1px solid #30363d; margin: 10px 0; padding-top: 10px;">
+            <div class="legend-item">
+                <div class="legend-dot" style="background:#0d47a1; border-color:#42a5f5;"></div>
+                <span>Базовые ABC-ядра</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background:#b71c1c; border-color:#ff5252;"></div>
+                <span>Категории атак</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background:#1b5e20; border-color:#66bb6a;"></div>
+                <span>Категории встраивания</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background:#e65100; border-color:#ff9800;"></div>
+                <span>Категории экспертизы</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background:#4a148c; border-color:#ab47bc;"></div>
+                <span>Категории датасетов</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-dot" style="background:#263238; border-color:#90a4ae;"></div>
+                <span>Утилиты / метаклассы</span>
+            </div>
+        </div>
+        
+        <div style="border-top:1px solid #30363d; margin: 10px 0; padding-top: 10px;">
+            <div class="legend-item">
+                <span style="color:#58a6ff; font-weight:bold;">━━▶</span>
+                <span>Наследование (extends)</span>
+            </div>
+            <div class="legend-item">
+                <span style="color:#8b949e; font-weight:bold;">- -▶</span>
+                <span>Импорт / зависимость</span>
+            </div>
+        </div>
+        
+        <button class="btn" onclick="expandAll()">Развернуть всё</button>
+        <button class="btn" onclick="collapseAll()">Свернуть всё</button>
+        <button class="btn" onclick="resetZoom()">Сброс зума</button>
+    </div>
+    
+    <div id="tooltip"></div>
+    <div id="counter">Узлов: <span id="node-count">0</span></div>
+
+    <script>
+        // ============================================================
+        //  ДАННЫЕ: дерево классов и зависимостей DWARF Framework
+        // ============================================================
+        const treeData = {
+            name: "DWARF Framework",
+            type: "root",
+            desc: "Автоматизированный фреймворк для оценки робастности цифровых водяных знаков.",
+            children: [
+                {
+                    name: "🛠️ Утилиты",
+                    type: "utils-group",
+                    desc: "Вспомогательные модули трёх уровней: общие, ядра, предметные.",
+                    children: [
+                        {
+                            name: "common_utils",
+                            type: "utils",
+                            desc: "Общие примитивы: DWARF_DIR, Path, abc. Используются всеми модулями.",
+                            children: []
+                        },
+                        {
+                            name: "core/utils",
+                            type: "utils",
+                            desc: "Внутренние утилиты ядра: import_function() для динамической загрузки модулей.",
+                            children: []
+                        },
+                        {
+                            name: "attack_utils",
+                            type: "utils",
+                            desc: "Хелперы для атак: load_rgb(), save_rgb(), roundtrip_buffer() для кодеков.",
+                            children: []
+                        },
+                        {
+                            name: "expertise_utils",
+                            type: "utils",
+                            desc: "Хелперы для метрик: ssim_maps(), fsim_luma_maps(), iqa_metric(), align_bits().",
+                            children: []
+                        }
+                    ]
+                },
+                {
+                    name: "⚙️ Ядро",
+                    type: "core-group",
+                    desc: "Абстрактные базовые классы с метаклассами и автоматической регистрацией.",
+                    children: [
+                        {
+                            name: "Метаклассы",
+                            type: "meta-group",
+                            desc: "Метаклассы с __getattr__ для динамического доступа к реестру (Attack_Core.Crop).",
+                            children: [
+                                { name: "Attack_Core_Meta", type: "meta", desc: "Метакласс для Attack_Core. Добавляет __getattr__, который ищет в _registered_attacks.", children: [] },
+                                { name: "Embedding_Core_Meta", type: "meta", desc: "Метакласс для Embedding_Core. Добавляет __getattr__ для _registered_embeddings.", children: [] },
+                                { name: "Expertise_Core_Meta", type: "meta", desc: "Метакласс для Expertise_Core. Добавляет __getattr__ для _registered_expertises.", children: [] },
+                                { name: "Ds_Core_Meta", type: "meta", desc: "Метакласс для Ds_Core. Добавляет __getattr__ для _registered_dss.", children: [] }
+                            ]
+                        },
+                        {
+                            name: "Базовые ABC",
+                            type: "core-group",
+                            desc: "Четыре абстрактных класса-оркестратора с реестром через __init_subclass__.",
+                            children: [
+                                {
+                                    name: "Attack_Core",
+                                    type: "core",
+                                    desc: "Оркестратор атак. _registered_attacks собирает всех наследников автоматически. Методы: attack(), get_all_attacks(), use_attacks().",
+                                    children: [
+                                        {
+                                            name: "🔴 Атаки",
+                                            type: "attack-group",
+                                            desc: "10 категорий атак. Реализованы: Geometric (1), Compression (8), Color/Brightness (6). Остальные — заглушки.",
+                                            children: [
+                                                { name: "Geometric", type: "attack", desc: "Геометрические атаки: crop, rotation, scaling, affine. Реализовано: Crop.", status: "partial" },
+                                                { name: "Noise", type: "attack", desc: "Шумовые атаки: AWGN, salt & pepper, speckle. Пока не реализованы.", status: "empty" },
+                                                { name: "Filtering", type: "attack", desc: "Фильтрационные атаки: Gaussian blur, median, bilateral. Пока не реализованы.", status: "empty" },
+                                                { name: "Compression", type: "attack", desc: "Атаки сжатия: JPEG, WebP, AVIF, HEIC, BPG, FLIF, TIFF, JPEG2000. Все реализованы.", status: "full" },
+                                                { name: "Color/Brightness", type: "attack", desc: "Атаки цвета: grayscale, gamma, bit-depth, color jitter, brightness/contrast, color space noise. Все реализованы.", status: "full" },
+                                                { name: "SOTA", type: "attack", desc: "Генеративные атаки: diffusion, GAN, super-resolution. Пока не реализованы.", status: "empty" },
+                                                { name: "WM Removal", type: "attack", desc: "Нейросети удаления ЦВЗ. Пока не реализованы.", status: "empty" },
+                                                { name: "Adversarial", type: "attack", desc: "Adversarial examples: FGSM, PGD. Пока не реализованы.", status: "empty" },
+                                                { name: "Collage", type: "attack", desc: "Коллажные атаки: copy-move, splicing. Пока не реализованы.", status: "empty" },
+                                                { name: "Physical", type: "attack", desc: "Физические атаки: screen-cam, print-scan. Пока не реализованы.", status: "empty" }
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    name: "Embedding_Core",
+                                    type: "core",
+                                    desc: "Оркестратор встраивания. _registered_embeddings. Методы: embedding(), extraction(), get_all_embeddings().",
+                                    children: [
+                                        {
+                                            name: "🟢 Встраивание",
+                                            type: "embed-group",
+                                            desc: "5 категорий методов встраивания. Реализована только Spatial (LSB).",
+                                            children: [
+                                                { name: "Spatial", type: "embed", desc: "Пространственная область: LSB, block-based, edge-based. Реализовано: LSB.", status: "partial" },
+                                                { name: "Frequency", type: "embed", desc: "Частотная область: DCT, DWT, DFT, SVD, гибриды. Пока не реализованы.", status: "empty" },
+                                                { name: "Quantization", type: "embed", desc: "QIM, DM, DC-QIM, ST-QIM. Пока не реализованы.", status: "empty" },
+                                                { name: "Spread Spectrum", type: "embed", desc: "DSSS, chaotic SS, orthogonal carriers. Пока не реализованы.", status: "empty" },
+                                                { name: "SOTA", type: "embed", desc: "Deep learning: HiDDeN, StegaStamp, diffusion-based. Пока не реализованы.", status: "empty" }
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    name: "Expertise_Core",
+                                    type: "core",
+                                    desc: "Оркестратор экспертизы. _registered_expertises. Метод: expertise().",
+                                    children: [
+                                        {
+                                            name: "🟠 Экспертиза",
+                                            type: "expert-group",
+                                            desc: "2 категории метрик. Обе полностью реализованы.",
+                                            children: [
+                                                { name: "Robustness", type: "expert", desc: "Метрики устойчивости: BER, NC, Accuracy, F1, Precision, Recall, AUC. Все реализованы.", status: "full" },
+                                                { name: "Imperceptibility", type: "expert", desc: "Метрики незаметности: PSNR, SSIM, MS-SSIM, LPIPS, DISTS, FSIM, FSIMc, BRISQUE, NIQE, MSE, Watermark PSNR. Все реализованы.", status: "full" }
+                                            ]
+                                        }
+                                    ]
+                                },
+                                {
+                                    name: "Ds_Core",
+                                    type: "core",
+                                    desc: "Оркестратор датасетов. _registered_dss. Метод: ds(). Пока без реализаций.",
+                                    children: [
+                                        {
+                                            name: "🟣 Датасеты",
+                                            type: "data-group",
+                                            desc: "Категория источников данных. Заглушка — конкретные датасеты не реализованы.",
+                                            children: [
+                                                { name: "Ready_Datasets", type: "data", desc: "Базовая категория для датасетов (BOSSBase, DIV2K и т.д.). Пока пуста.", status: "empty" }
+                                            ]
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        };
+
+        // ============================================================
+        //  ЦВЕТА
+        // ============================================================
+        const colors = {
+            root:         { fill: '#161b22', stroke: '#58a6ff', text: '#f0f6fc' },
+            'utils-group':{ fill: '#263238', stroke: '#90a4ae', text: '#eceff1' },
+            utils:        { fill: '#37474f', stroke: '#90a4ae', text: '#eceff1' },
+            'core-group': { fill: '#0d47a1', stroke: '#42a5f5', text: '#ffffff' },
+            core:         { fill: '#1565c0', stroke: '#42a5f5', text: '#ffffff' },
+            'meta-group': { fill: '#1a1a2e', stroke: '#7f8c8d', text: '#bdbdbd' },
+            meta:         { fill: '#2c2c54', stroke: '#7f8c8d', text: '#bdbdbd' },
+            'attack-group':{ fill: '#b71c1c', stroke: '#ff5252', text: '#ffffff' },
+            attack:       { fill: '#c62828', stroke: '#ff5252', text: '#ffffff' },
+            'embed-group':{ fill: '#1b5e20', stroke: '#66bb6a', text: '#ffffff' },
+            embed:        { fill: '#2e7d32', stroke: '#66bb6a', text: '#ffffff' },
+            'expert-group':{ fill: '#e65100', stroke: '#ff9800', text: '#ffffff' },
+            expert:       { fill: '#ef6c00', stroke: '#ff9800', text: '#ffffff' },
+            'data-group': { fill: '#4a148c', stroke: '#ab47bc', text: '#ffffff' },
+            data:         { fill: '#6a1b9a', stroke: '#ab47bc', text: '#ffffff' }
+        };
+
+        const radiusMap = {
+            root: 28, 'utils-group': 22, utils: 14,
+            'core-group': 24, core: 20, 'meta-group': 20, meta: 14,
+            'attack-group': 22, attack: 16,
+            'embed-group': 22, embed: 16,
+            'expert-group': 22, expert: 16,
+            'data-group': 22, data: 16
+        };
+
+        // ============================================================
+        //  D3 TREE SETUP
+        // ============================================================
+        const margin = { top: 40, right: 120, bottom: 40, left: 120 };
+        const width = window.innerWidth;
+        const height = window.innerHeight;
+        const svg = d3.select("#tree-svg");
+        const g = svg.append("g").attr("transform", `translate(${margin.left},${height/2})`);
+
+        let i = 0;
+        const duration = 500;
+        let root;
+
+        // Zoom
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 4])
+            .on("zoom", (event) => {
+                g.attr("transform", event.transform);
+            });
+        svg.call(zoom);
+        svg.call(zoom.transform, d3.zoomIdentity.translate(margin.left, height/2).scale(0.85));
+
+        // Tree layout
+        const treeMap = d3.tree().nodeSize([50, 220]);
+
+        root = d3.hierarchy(treeData, d => d.children);
+        root.x0 = height / 2;
+        root.y0 = 0;
+
+        // Свернуть глубокие уровни по умолчанию
+        root.children.forEach(collapseLevel);
+        function collapseLevel(d) {
+            if (d.children) {
+                if (d.depth >= 3) {
+                    d._children = d.children;
+                    d.children = null;
+                } else {
+                    d.children.forEach(collapseLevel);
+                }
+            }
+        }
+
+        update(root);
+        updateCounter();
+
+        // ============================================================
+        //  UPDATE FUNCTION
+        // ============================================================
+        function update(source) {
+            const treeData = treeMap(root);
+            const nodes = treeData.descendants();
+            const links = treeData.links();
+
+            // Normalize for fixed-depth
+            nodes.forEach(d => { d.y = d.depth * 260; });
+
+            // --- NODES ---
+            const node = g.selectAll('g.node')
+                .data(nodes, d => d.id || (d.id = ++i));
+
+            const nodeEnter = node.enter().append('g')
+                .attr('class', d => 'node' + (d._children ? ' collapsed' : ''))
+                .attr("transform", d => `translate(${source.y0},${source.x0})`)
+                .on('click', click)
+                .on('mouseover', showTooltip)
+                .on('mouseout', hideTooltip);
+
+            nodeEnter.append('circle')
+                .attr('r', 1e-6)
+                .style("fill", d => colors[d.data.type]?.fill || '#37474f')
+                .style("stroke", d => colors[d.data.type]?.stroke || '#90a4ae');
+
+            nodeEnter.append('text')
+                .attr("dy", ".35em")
+                .attr("x", d => radiusMap[d.data.type] + 10 || 20)
+                .attr("text-anchor", "start")
+                .text(d => d.data.name)
+                .style("fill-opacity", 1e-6)
+                .style("font-size", d => d.data.type === 'root' ? '16px' : (d.data.type.endsWith('group') ? '14px' : '12px'))
+                .style("font-weight", d => d.data.type === 'root' || d.data.type.endsWith('group') ? '600' : '400');
+
+            // Status badge for leaf nodes
+            nodeEnter.filter(d => d.data.status && !d.children && !d._children)
+                .append('circle')
+                .attr('class', 'status-badge')
+                .attr('cx', d => -(radiusMap[d.data.type] || 14) - 6)
+                .attr('cy', d => -(radiusMap[d.data.type] || 14) - 2)
+                .attr('r', 5)
+                .style("fill", d => d.data.status === 'full' ? '#4caf50' : (d.data.status === 'partial' ? '#ff9800' : '#f44336'))
+                .style("stroke", "#0d1117")
+                .style("stroke-width", "2px");
+
+            // UPDATE
+            const nodeUpdate = node.merge(nodeEnter).transition().duration(duration)
+                .attr("transform", d => `translate(${d.y},${d.x})`);
+
+            nodeUpdate.select('circle')
+                .attr('r', d => radiusMap[d.data.type] || 14)
+                .style("fill", d => d._children ? (colors[d.data.type]?.fill || '#37474f') : (colors[d.data.type]?.fill || '#37474f'))
+                .style("stroke", d => colors[d.data.type]?.stroke || '#90a4ae');
+
+            nodeUpdate.select('text')
+                .style("fill-opacity", 1);
+
+            nodeUpdate.attr('class', d => 'node' + (d._children ? ' collapsed' : ''));
+
+            // EXIT
+            const nodeExit = node.exit().transition().duration(duration)
+                .attr("transform", d => `translate(${source.y},${source.x})`)
+                .remove();
+
+            nodeExit.select('circle').attr('r', 1e-6);
+            nodeExit.select('text').style("fill-opacity", 1e-6);
+
+            // --- LINKS ---
+            const link = g.selectAll('path.link')
+                .data(links, d => d.target.id);
+
+            const linkEnter = link.enter().insert('path', "g")
+                .attr("class", d => {
+                    const pt = d.target.data.type;
+                    const isInheritance = pt === 'core' || pt === 'meta' || pt === 'attack' || pt === 'embed' || pt === 'expert' || pt === 'data' || pt.endsWith('group');
+                    return "link " + (isInheritance ? "inheritance" : "import");
+                })
+                .attr('d', d => {
+                    const o = { x: source.x0, y: source.y0 };
+                    return diagonal(o, o);
+                });
+
+            const linkUpdate = link.merge(linkEnter).transition().duration(duration)
+                .attr('d', d => diagonal(d.source, d.target));
+
+            link.exit().transition().duration(duration)
+                .attr('d', d => {
+                    const o = { x: source.x, y: source.y };
+                    return diagonal(o, o);
+                })
+                .remove();
+
+            // Save old positions
+            nodes.forEach(d => {
+                d.x0 = d.x;
+                d.y0 = d.y;
+            });
+        }
+
+        function diagonal(s, d) {
+            return `M ${s.y} ${s.x}
+                    C ${(s.y + d.y) / 2} ${s.x},
+                      ${(s.y + d.y) / 2} ${d.x},
+                      ${d.y} ${d.x}`;
+        }
+
+        // ============================================================
+        //  INTERACTIONS
+        // ============================================================
+        function click(event, d) {
+            if (d.children) {
+                d._children = d.children;
+                d.children = null;
+            } else {
+                d.children = d._children;
+                d._children = null;
+            }
+            update(d);
+            updateCounter();
+        }
+
+        function showTooltip(event, d) {
+            const tooltip = document.getElementById('tooltip');
+            const data = d.data;
+            const color = colors[data.type] || colors.utils;
+            
+            let statusHtml = '';
+            if (data.status) {
+                const statusColor = data.status === 'full' ? '#4caf50' : (data.status === 'partial' ? '#ff9800' : '#f44336');
+                const statusText = data.status === 'full' ? 'Полностью реализовано' : (data.status === 'partial' ? 'Частично реализовано' : 'Не реализовано');
+                statusHtml = `<div style="margin-top:8px; padding-top:8px; border-top:1px solid #30363d;">
+                    <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${statusColor};margin-right:6px;"></span>
+                    <span style="color:${statusColor};font-weight:600;">${statusText}</span>
+                </div>`;
+            }
+
+            tooltip.innerHTML = `
+                <div class="tt-title">${data.name}</div>
+                <span class="tt-type" style="background:${color.fill};color:${color.text};border:1px solid ${color.stroke};">${data.type}</span>
+                <div class="tt-desc">${data.desc || ''}</div>
+                ${statusHtml}
+            `;
+            
+            const rect = document.getElementById('container').getBoundingClientRect();
+            let left = event.pageX + 20;
+            let top = event.pageY - 20;
+            
+            if (left + 400 > window.innerWidth) left = event.pageX - 400;
+            if (top + 200 > window.innerHeight) top = event.pageY - 200;
+            
+            tooltip.style.left = left + 'px';
+            tooltip.style.top = top + 'px';
+            tooltip.style.opacity = '1';
+
+            // Highlight path to root
+            g.selectAll('path.link').classed('highlighted', false);
+            let curr = d;
+            while (curr.parent) {
+                g.selectAll('path.link')
+                    .filter(l => l.target === curr)
+                    .classed('highlighted', true);
+                curr = curr.parent;
+            }
+        }
+
+        function hideTooltip() {
+            document.getElementById('tooltip').style.opacity = '0';
+            g.selectAll('path.link').classed('highlighted', false);
+        }
+
+        function expandAll() {
+            function expand(d) {
+                if (d._children) {
+                    d.children = d._children;
+                    d._children = null;
+                }
+                if (d.children) d.children.forEach(expand);
+            }
+            expand(root);
+            update(root);
+            updateCounter();
+        }
+
+        function collapseAll() {
+            function collapse(d) {
+                if (d.children) {
+                    d._children = d.children;
+                    d.children = null;
+                }
+                if (d._children) d._children.forEach(collapse);
+            }
+            if (root.children) {
+                root.children.forEach(collapse);
+            }
+            update(root);
+            updateCounter();
+        }
+
+        function resetZoom() {
+            svg.transition().duration(750).call(
+                zoom.transform,
+                d3.zoomIdentity.translate(margin.left, height/2).scale(0.85)
+            );
+        }
+
+        function updateCounter() {
+            const count = root.descendants().filter(d => d.children || d._children ? true : true).length;
+            document.getElementById('node-count').textContent = count;
+        }
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            svg.attr('width', w).attr('height', h);
+        });
+    </script>
+</body>
+</html>
