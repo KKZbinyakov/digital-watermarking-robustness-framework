@@ -11,11 +11,7 @@ AttributeError.
 опаснее ошибки импорта: отчёт получится неполным, и понять это по нему нельзя.
 Такой случай разбирается отдельно и сопровождается предупреждением.
 """
-import importlib
-import pkgutil
-import warnings
-
-from pathlib import Path
+from dwarf.common_utils.common_utils import *
 
 _available = {module.name for module in pkgutil.iter_modules(__path__)
               if not module.ispkg}
@@ -37,4 +33,4 @@ if _uncompiled:
         stacklevel=2,
     )
 
-del importlib, pkgutil, warnings, Path, _available, _name, _uncompiled
+del _available, _name, _uncompiled

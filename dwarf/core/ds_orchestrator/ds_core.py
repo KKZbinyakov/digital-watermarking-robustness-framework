@@ -1,7 +1,7 @@
 from pathlib import Path
 from typing import Iterator
 
-from src.dwarf.core.utils.utils import *
+from dwarf.core.utils.utils import *
 
 class Ds_Core_Meta(abc.ABCMeta):
     def __getattr__(cls, name: str): 

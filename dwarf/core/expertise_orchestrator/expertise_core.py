@@ -1,4 +1,4 @@
-from src.dwarf.core.utils.utils import *
+from dwarf.core.utils.utils import *
 
 class Expertise_Core_Meta(abc.ABCMeta):
     def __getattr__(cls, name: str): 

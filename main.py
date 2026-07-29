@@ -1,18 +1,4 @@
-# import sys
-# from pathlib import Path
-# PROJECT_DIR = Path(__file__).resolve().parent
-
-# sys.path.insert(0, str(PROJECT_DIR))
-# sys.path.insert(0, str(PROJECT_DIR / "src"))
-
-from src.dwarf import *
-# import src.dwarf as dwarf
-import src.dwarf.ready_solutions as ready
-
-from src.dwarf.ready_solutions.attack_solutions.crop import Crop
-from src.dwarf.ready_solutions.embedding_solutions.lsb import LSB
-from src.dwarf.ready_solutions.expertise_solutions.ber import BER
-from src.dwarf.core.attack_orchestrator.attack_core import Ready_Geometric_Attacks
+from dwarf import *
 
 if __name__ == "__main__":
     exp_obj = Expertise_Core.BER

@@ -1,4 +1,4 @@
-from src.dwarf.ready_solutions.utils.utils import *
+from dwarf.ready_solutions.utils.embedding_utils import *
 
 class LSB(Ready_Spatial_Embeddings):
     @staticmethod
