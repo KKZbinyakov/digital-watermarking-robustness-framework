@@ -1,23 +1,25 @@
-name: Generate Architecture Diagram
+name: Architecture Diagram
 
 on:
   push:
-    branches: [main, master]
+    branches: [main]
     paths:
       - '**.py'
+      - '.github/workflows/**'
   pull_request:
-    branches: [main, master]
+    branches: [main]
     paths:
       - '**.py'
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
+  pull-requests: write
 
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: false
 
 jobs:
@@ -25,33 +27,27 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Prepare environment
-        run: |
-          mkdir -p docs
-          ls -la
-          test -f diagen.py || (echo "ERROR: diagen.py not found!" && exit 1)
-
       - name: Generate tree
         run: |
           set -e
-          python diagen.py . docs/architecture.html
-          cp docs/architecture.html docs/index.html
-          ls -la docs/
+          test -f diagen.py || { echo "ERROR: diagen.py not found"; exit 1; }
+          mkdir -p site
+          python diagen.py . site/index.html
+          cp site/index.html site/architecture.html
+          touch site/.nojekyll
+          ls -la site/
 
       - name: Upload artifact (PR preview)
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: architecture-diagram
-          path: docs/architecture.html
+          path: site/index.html
           retention-days: 5
 
       - name: Comment PR with preview link
@@ -66,53 +62,39 @@ jobs:
               repo: context.repo.repo,
               issue_number: context.issue.number,
             });
-            const botComment = comments.find(c => c.user.login === 'github-actions[bot]' && c.body.includes('Architecture diagram'));
+            const botComment = comments.find(
+              c => c.user.login === 'github-actions[bot]' && c.body.includes('Architecture diagram')
+            );
             if (botComment) {
               await github.rest.issues.updateComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 comment_id: botComment.id,
-                body: body,
+                body,
               });
             } else {
               await github.rest.issues.createComment({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
                 issue_number: context.issue.number,
-                body: body,
+                body,
               });
             }
 
-      - name: Check for changes
-        if: github.event_name == 'push'
-        id: check
-        run: |
-          if git diff --quiet HEAD -- docs/architecture.html docs/index.html; then
-            echo "changed=false" >> $GITHUB_OUTPUT
-          else
-            echo "changed=true" >> $GITHUB_OUTPUT
-          fi
-
-      - name: Commit and push
-        if: github.event_name == 'push' && steps.check.outputs.changed == 'true'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/architecture.html docs/index.html
-          git commit -m "docs: auto-update architecture diagram [skip ci]"
-          git push
-
-      - name: Setup Pages
-        if: github.event_name == 'push' && steps.check.outputs.changed == 'true'
-        uses: actions/configure-pages@v5
-
       - name: Upload Pages artifact
-        if: github.event_name == 'push' && steps.check.outputs.changed == 'true'
+        if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:
-          path: 'docs/'
+          path: site/
 
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - name: Deploy to GitHub Pages
-        if: github.event_name == 'push' && steps.check.outputs.changed == 'true'
         id: deployment
         uses: actions/deploy-pages@v4

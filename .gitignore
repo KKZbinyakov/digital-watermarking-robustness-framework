@@ -41,3 +41,8 @@ logs/*.log
 src/**/*.c
 *.so
 *.pyd
+
+# ---- Generated architecture diagram ----
+site/
+docs/
+dwarf_tree.html
