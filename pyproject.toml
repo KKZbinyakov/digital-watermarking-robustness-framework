@@ -51,7 +51,8 @@ dev = [      # Это зависимости для разработки
 ]
 
 [tool.setuptools.packages.find]
-where = ["src"]
+where = ["."]
+include = ["dwarf*"]
 
 [project.urls]     # Ссылки на дополнительную информацию, у нас пока ничего нет, мб потом сделаем.
 Homepage = "https://github.com/KKZbinyakov/digital-watermarking-robustness-framework"

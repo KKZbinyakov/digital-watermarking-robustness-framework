@@ -5,11 +5,13 @@ on:
     branches: [main]
     paths:
       - '**.py'
+      - '**.pyx'
       - '.github/workflows/**'
   pull_request:
     branches: [main]
     paths:
       - '**.py'
+      - '**.pyx'
   workflow_dispatch:
 
 permissions:

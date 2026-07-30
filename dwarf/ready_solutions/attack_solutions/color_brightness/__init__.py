@@ -1,0 +1,1 @@
+"""Категория: color_brightness."""

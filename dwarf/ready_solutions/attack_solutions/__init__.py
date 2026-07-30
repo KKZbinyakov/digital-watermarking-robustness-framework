@@ -12,15 +12,18 @@ AttributeError.
 """
 from dwarf.common_utils.common_utils import *
 
-_available = {module.name for module in pkgutil.iter_modules(__path__)
+_available = {module.name
+              for module in pkgutil.walk_packages(__path__, prefix=__name__ + ".")
               if not module.ispkg}
 
 for _name in sorted(_available):
-    importlib.import_module(f"{__name__}.{_name}")
+    importlib.import_module(_name)
+
+_stems = {_full.rsplit(".", 1)[-1] for _full in _available}
 
 _uncompiled = sorted(
-    source.stem for source in Path(__path__[0]).glob("*.pyx")
-    if source.stem not in _available
+    source.stem for source in Path(__path__[0]).rglob("*.pyx")
+    if source.stem not in _stems
 )
 
 if _uncompiled:
@@ -32,4 +35,4 @@ if _uncompiled:
         stacklevel=2,
     )
 
-del _available, _name, _uncompiled
+del _available, _name, _stems, _uncompiled

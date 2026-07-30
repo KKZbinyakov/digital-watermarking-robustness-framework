@@ -10,7 +10,8 @@ import numpy
 from Cython.Build import cythonize
 from setuptools import Extension, setup
 
-SRC = Path("src")
+SRC = Path(".")
+PACKAGE = Path("dwarf")
 
 # Уровень оптимизации задаётся явно и по-разному для компиляторов: без него
 # горячие циклы свёртки теряют около 15% скорости. Флаги, меняющие семантику
@@ -26,7 +27,7 @@ extensions = [
         define_macros=[("NPY_NO_DEPRECATED_API", "NPY_1_7_API_VERSION")],
         extra_compile_args=OPTIMIZATION,
     )
-    for pyx in sorted(SRC.rglob("*.pyx"))
+    for pyx in sorted(PACKAGE.rglob("*.pyx"))
 ]
 
 setup(

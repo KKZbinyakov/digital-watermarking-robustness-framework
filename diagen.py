@@ -8,6 +8,7 @@ DWARF Architecture Tree Visualizer v2
     python generate_tree.py [путь_к_папке] [выходной_файл.html]
 """
 import ast
+import re
 import os
 import sys
 import json
@@ -37,6 +38,116 @@ def get_func_signature(node):
     return f"{node.name}({', '.join(args)})" if args else f"{node.name}()"
 
 
+_PYX_DEF_RE = re.compile(
+    r"^([ \t]*)(?:cpdef|cdef|def)[ \t]+([^\n(=]*?)\(([^)]*)\)[^\n:]*:",
+    re.MULTILINE,
+)
+_PYX_CLASS_RE = re.compile(
+    r"^([ \t]*)(?:c[p]?def[ \t]+)?class[ \t]+(\w+)[ \t]*(?:\(([^)]*)\))?[^\n:]*:",
+    re.MULTILINE,
+)
+_IDENT_RE = re.compile(r"[A-Za-z_]\w*")
+
+
+def _split_top_level(text):
+    """Делит список аргументов по запятым верхнего уровня."""
+    parts, depth, current = [], 0, []
+    for ch in text:
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        if ch == "," and depth == 0:
+            parts.append("".join(current))
+            current = []
+        else:
+            current.append(ch)
+    if current:
+        parts.append("".join(current))
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _cut_at_top_level(text, char):
+    """Обрезает строку по первому вхождению char вне скобок."""
+    depth = 0
+    for i, ch in enumerate(text):
+        if ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            depth -= 1
+        elif ch == char and depth == 0:
+            return text[:i]
+    return text
+
+
+def _pyx_arg_names(raw_args):
+    """Достаёт имена аргументов из сигнатуры Cython или Python.
+
+    'double[:, ::1] pixels, int levels=8' -> ['pixels', 'levels']
+    'args: dict = {...}'                  -> ['args']
+
+    В Cython имя стоит после типа, в аннотации Python - до двоеточия.
+    Двоеточия внутри memoryview [:, ::1] аннотацией не считаются.
+    """
+    names = []
+    for part in _split_top_level(raw_args):
+        part = _cut_at_top_level(part, "=")
+        head = _cut_at_top_level(part, ":")
+        is_annotated = head != part
+        part = head.replace("not None", " ").replace("*", " ").strip()
+        if not part:
+            continue
+        idents = _IDENT_RE.findall(part)
+        if idents:
+            names.append(idents[0] if is_annotated else idents[-1])
+    return names
+
+
+def _pyx_signature(name, raw_args, drop_self=False):
+    args = _pyx_arg_names(raw_args)
+    if drop_self and args and args[0] in ("self", "cls"):
+        args = args[1:]
+    return f"{name}({', '.join(args)})" if args else f"{name}()"
+
+
+def analyze_pyx(source, rel):
+    """Возвращает {'classes': [...], 'functions': [...]} для Cython-файла."""
+    found = []
+    for m in _PYX_CLASS_RE.finditer(source):
+        found.append((m.start(), len(m.group(1)), "class", m.group(2), m.group(3) or ""))
+    for m in _PYX_DEF_RE.finditer(source):
+        idents = _IDENT_RE.findall(m.group(2))
+        if not idents:
+            continue
+        found.append((m.start(), len(m.group(1)), "def", idents[-1], m.group(3)))
+    found.sort(key=lambda item: item[0])
+
+    file_data = {"classes": [], "functions": []}
+    open_class = None  # (indent, cls_info)
+
+    for _, indent, kind, name, raw in found:
+        if open_class and indent <= open_class[0]:
+            open_class = None
+        if kind == "class":
+            bases = [b for b in _split_top_level(raw)
+                     if _IDENT_RE.fullmatch(b.replace(".", ""))]
+            cls_info = {
+                "name": name,
+                "file": rel,
+                "bases": bases,
+                "children": [],
+                "methods": [],
+            }
+            file_data["classes"].append(cls_info)
+            open_class = (indent, cls_info)
+        elif open_class:
+            open_class[1]["methods"].append(_pyx_signature(name, raw, drop_self=True))
+        elif indent == 0:
+            file_data["functions"].append(_pyx_signature(name, raw))
+
+    return file_data
+
+
 def analyze_repo(root_dir):
     """Анализирует репозиторий: классы, функции, файлы"""
     classes = {}      # имя -> {file, bases, children, methods}
@@ -44,7 +155,7 @@ def analyze_repo(root_dir):
     
     for dirpath, _, filenames in os.walk(root_dir):
         for fname in filenames:
-            if not fname.endswith(".py"):
+            if not fname.endswith((".py", ".pyx")):
                 continue
             fpath = os.path.join(dirpath, fname)
             rel = os.path.relpath(fpath, root_dir).replace("\\", "/")
@@ -53,6 +164,17 @@ def analyze_repo(root_dir):
                     source = f.read()
                 if not source.strip():
                     continue
+            except Exception:
+                continue
+
+            if fname.endswith(".pyx"):
+                file_data = analyze_pyx(source, rel)
+                for cls_info in file_data["classes"]:
+                    classes[cls_info["name"]] = cls_info
+                files[rel] = file_data
+                continue
+
+            try:
                 tree = ast.parse(source)
             except Exception:
                 continue
@@ -142,6 +264,44 @@ def make_class_node(cls_name, classes, visited=None):
     return node
 
 
+CATEGORY_SUFFIXES = ("_Attacks", "_Expertise", "_Embeddings", "_Datasets")
+
+
+def category_of(fdata, classes):
+    """Определяет категорию файла по базовому классу его реализации.
+
+    Поднимается по цепочке наследования до класса вида Ready_*, поэтому
+    работает и через промежуточные классы.
+    """
+    for cls in fdata["classes"]:
+        seen = set()
+        queue = list(cls["bases"])
+        while queue:
+            base = queue.pop(0)
+            if not base or base in seen:
+                continue
+            seen.add(base)
+            if base.startswith("Ready_"):
+                name = base[len("Ready_"):]
+                for suffix in CATEGORY_SUFFIXES:
+                    if name.endswith(suffix):
+                        name = name[: -len(suffix)]
+                        break
+                return name.lower() or None
+            if base in classes:
+                queue.extend(classes[base]["bases"])
+    return None
+
+
+def folder_of(rel, dirname):
+    """Возвращает подпапку внутри *_solutions, если файл в ней лежит."""
+    parts = rel.replace("\\", "/").split("/")
+    if dirname not in parts:
+        return None
+    tail = parts[parts.index(dirname) + 1:]
+    return tail[0] if len(tail) > 1 else None
+
+
 def build_tree_data(classes, files, root_dir):
     """Строит иерархическое дерево для D3.js"""
     
@@ -218,7 +378,7 @@ def build_tree_data(classes, files, root_dir):
     
     solutions_children = []
     for dirname, (label, group) in solutions_dirs.items():
-        dir_files = []
+        by_category = {}
         for rel, fdata in sorted(files.items()):
             if dirname not in rel.replace("\\", "/"):
                 continue
@@ -263,14 +423,33 @@ def build_tree_data(classes, files, root_dir):
             
             if file_children:
                 file_node["children"] = file_children
-            dir_files.append(file_node)
+
+            # Категория берётся из базового класса, а не из пути: если файл
+            # лежит не в своей папке, схема покажет правду, а расхождение
+            # будет видно по пометке рядом с именем файла.
+            category = category_of(fdata, classes)
+            folder = folder_of(rel, dirname)
+            if category is None:
+                category = folder or "прочее"
+            if folder and folder != category:
+                file_node["name"] = f"{basename}  \u26a0 в папке {folder}"
+            by_category.setdefault(category, []).append(file_node)
         
-        if dir_files:
+        if by_category:
+            category_nodes = [
+                {
+                    "name": f"{name} ({len(nodes)})",
+                    "type": "group",
+                    "group": group,
+                    "children": nodes,
+                }
+                for name, nodes in sorted(by_category.items())
+            ]
             solutions_children.append({
                 "name": label,
                 "type": "group",
                 "group": group,
-                "children": dir_files
+                "children": category_nodes
             })
     
     if solutions_children:

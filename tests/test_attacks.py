@@ -511,7 +511,7 @@ def test_clahe_tiles_cover_whole_frame(height, tiles):
     Returns:
         None
     """
-    from dwarf.ready_solutions.attack_solutions.histogram_equalization import _build_maps
+    from dwarf.ready_solutions.attack_solutions.color_brightness.histogram_equalization import _build_maps
 
     channel = np.zeros((height, height), dtype=np.uint8)
     _, tile_height, tile_width = _build_maps(channel, tiles, 2.0, 256)

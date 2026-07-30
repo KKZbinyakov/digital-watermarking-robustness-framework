@@ -38,7 +38,7 @@ croped.jpg
 logs/*.log
 
 # ---- Cython build artifacts ----
-src/**/*.c
+dwarf/**/*.c
 *.so
 *.pyd
 
