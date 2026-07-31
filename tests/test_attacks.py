@@ -36,7 +36,10 @@ LOSSLESS = frozenset({"Tiff", "Flif"})
 CHANGES_SHAPE = frozenset({"Crop"})
 """Атаки, меняющие размер кадра: для них проверка совпадения формы неприменима."""
 
-SEEDED = frozenset({"Color_Jitter", "Color_Space_Noise", "Color_Quantization"})
+SEEDED = frozenset({
+    "Color_Jitter", "Color_Space_Noise", "Color_Quantization",
+    "AWGN", "Impulse", "Periodic", "Poisson", "Salt_and_Pepper", "Speckle",
+})
 """Атаки со случайностью: обязаны быть воспроизводимы по seed и различаться без него."""
 
 FRAGILE_ON_TINY = frozenset({"Crop"})
@@ -662,6 +665,211 @@ def test_compression_quality_is_monotone(name, low, high, tmp_path, photo):
     assert better < worse
 
 
+@pytest.mark.parametrize("name, param, weak, strong", [
+    ("AWGN", "sigma", 0.002, 0.09),
+    ("Speckle", "variance", 0.002, 0.04),
+    ("Periodic", "amplitude", 0.02, 0.18),
+])
+def test_noise_strength_is_monotone(name, param, weak, strong, tmp_path, photo):
+    """
+    Проверяет, что усиление параметра шума увеличивает искажение изображения.
+
+    Нарушение монотонности означает, что параметр не доходит до генератора шума
+    или используется не как масштаб амплитуды.
+
+    Args:
+        name (str): имя атаки
+        param (str): имя параметра, управляющего силой шума
+        weak (float): слабое значение параметра
+        strong (float): сильное значение параметра
+        tmp_path (pathlib.Path): временный каталог теста
+        photo (str): путь к тестовому изображению
+
+    Returns:
+        None
+    """
+    source = np.asarray(Image.open(photo).convert("RGB")).astype(float)
+    mild = np.abs(run(name, tmp_path, photo, seed=0, **{param: weak}).astype(float) - source).mean()
+    harsh = np.abs(run(name, tmp_path, photo, seed=0, **{param: strong}).astype(float) - source).mean()
+    assert harsh > mild, f"{name}: {param}={strong} искажает не сильнее, чем {param}={weak}"
+
+
+def test_poisson_peak_reduces_noise(tmp_path, photo):
+    """
+    Проверяет, что рост peak уменьшает относительный уровень пуассоновского шума.
+
+    peak задаёт среднее число фотонов на максимум яркости: чем оно больше, тем
+    мельче кванты сэмплирования и тем ближе результат к исходному изображению.
+    Обратная зависимость, в отличие от прочих шумов, где параметр — это прямая
+    амплитуда.
+
+    Args:
+        tmp_path (pathlib.Path): временный каталог теста
+        photo (str): путь к тестовому изображению
+
+    Returns:
+        None
+    """
+    source = np.asarray(Image.open(photo).convert("RGB")).astype(float)
+    low_peak = np.abs(run("Poisson", tmp_path, photo, seed=0, peak=2.0).astype(float) - source).mean()
+    high_peak = np.abs(run("Poisson", tmp_path, photo, seed=0, peak=900.0).astype(float) - source).mean()
+    assert high_peak < low_peak, "Poisson: больший peak не уменьшил искажение"
+
+
+@pytest.mark.parametrize("name, param", [("Impulse", "density"), ("Salt_and_Pepper", "density")])
+def test_density_controls_fraction_of_affected_pixels(name, param, tmp_path, photo):
+    """
+    Проверяет, что density управляет количеством затронутых пикселей.
+
+    density — это доля повреждённых пикселей, а не сила искажения на пиксель:
+    рост density обязан увеличивать число задетых пикселей, а не только
+    выраженность шума на уже задетых.
+
+    Args:
+        name (str): имя атаки
+        param (str): имя параметра плотности
+        tmp_path (pathlib.Path): временный каталог теста
+        photo (str): путь к тестовому изображению
+
+    Returns:
+        None
+    """
+    source = np.asarray(Image.open(photo).convert("RGB"))
+    sparse = run(name, tmp_path, photo, seed=0, **{param: 0.002})
+    dense = run(name, tmp_path, photo, seed=0, **{param: 0.04})
+    sparse_changed = np.count_nonzero(np.any(sparse != source, axis=-1))
+    dense_changed = np.count_nonzero(np.any(dense != source, axis=-1))
+    assert dense_changed > sparse_changed, f"{name}: рост {param} не увеличил число затронутых пикселей"
+
+
+def test_salt_and_pepper_changed_pixels_are_extreme(tmp_path, photo):
+    """
+    Проверяет определяющее свойство шума "соль и перец": затронутые пиксели
+    становятся чисто белыми или чисто чёрными, а не произвольными значениями.
+
+    Именно этим атака отличается от Impulse, где заменённые пиксели получают
+    случайное значение по каждому каналу.
+
+    Args:
+        tmp_path (pathlib.Path): временный каталог теста
+        photo (str): путь к тестовому изображению
+
+    Returns:
+        None
+    """
+    source = np.asarray(Image.open(photo).convert("RGB"))
+    result = run("Salt_and_Pepper", tmp_path, photo, density=0.05, seed=0)
+    changed_mask = np.any(result != source, axis=-1)
+    changed_pixels = result[changed_mask]
+    assert changed_pixels.size > 0, "ни один пиксель не был затронут: тест не проверяет ничего"
+    assert np.all((changed_pixels == 0) | (changed_pixels == 255)), (
+        "Salt_and_Pepper оставила затронутые пиксели не чисто чёрными/белыми"
+    )
+
+
+def test_homomorphic_filter_preserves_chrominance(tmp_path, photo):
+    """
+    Проверяет, что гомоморфная фильтрация трогает почти только яркость.
+
+    Атака работает в YCbCr и не должна менять каналы цветности напрямую.
+    Точного совпадения не ожидается: Cb/Cr фиксируются в самой атаке, но
+    итоговый RGB получается обратным переводом YCbCr -> RGB с отсечением по
+    диапазону 0..255, а канал Y растягивается на всю шкалу через нормировку
+    min-max. Там, где растянутая яркость выталкивает RGB за границы диапазона,
+    отсечение задевает и цветность при повторном переводе результата обратно
+    в YCbCr — такое случается на малой доле пикселей и не должно разрушать
+    общую корреляцию с исходной цветностью.
+
+    Args:
+        tmp_path (pathlib.Path): временный каталог теста
+        photo (str): путь к тестовому изображению
+
+    Returns:
+        None
+    """
+    source = np.array(Image.open(photo).convert("RGB").convert("YCbCr"), dtype=int)
+    result = run("Homomorphic_Filter", tmp_path, photo)
+    result_ycbcr = np.array(Image.fromarray(result, "RGB").convert("YCbCr"), dtype=int)
+    for channel, label in ((1, "Cb"), (2, "Cr")):
+        correlation = np.corrcoef(result_ycbcr[..., channel].ravel(), source[..., channel].ravel())[0, 1]
+        assert correlation > 0.98, f"Homomorphic_Filter заметно исказила канал {label}: корреляция {correlation:.4f}"
+
+
+@pytest.mark.parametrize("name, param, weak, strong", [
+    ("Box_Filter", "window", 3, 9),
+    ("Gaussian_Blur", "sigma", 0.5, 4.0),
+    ("Median_Filter", "window", 3, 7),
+    ("Bilateral_Filter", "sigma_space", 1.0, 8.0),
+    ("Wiener_Filter", "window", 3, 7),
+    ("Anisotropic_Diffusion", "iterations", 2, 30),
+])
+def test_blur_strength_increases_smoothing(name, param, weak, strong, tmp_path, photo):
+    """
+    Проверяет, что усиление параметра сглаживания уменьшает дисперсию кадра.
+
+    Все фильтры этой группы — сглаживающие: более широкое окно или большая
+    sigma обязаны стирать больше деталей, а значит снижать дисперсию сильнее.
+
+    Args:
+        name (str): имя атаки
+        param (str): имя параметра, управляющего силой сглаживания
+        weak (float): слабое значение параметра
+        strong (float): сильное значение параметра
+        tmp_path (pathlib.Path): временный каталог теста
+        photo (str): путь к тестовому изображению
+
+    Returns:
+        None
+    """
+    mild = run(name, tmp_path, photo, **{param: weak}).astype(float)
+    harsh = run(name, tmp_path, photo, **{param: strong}).astype(float)
+    assert harsh.var() < mild.var(), f"{name}: {param}={strong} сглаживает не сильнее, чем {param}={weak}"
+
+
+def test_anisotropic_diffusion_preserves_edges_better_than_gaussian(tmp_path):
+    """
+    Проверяет определяющее свойство диффузии Перона-Малик: подавление шума в
+    однородных областях при сохранении резких границ.
+
+    Изотропное размытие (Gaussian_Blur) той же общей силы сглаживания стирает
+    и шум, и границу одинаково. Анизотропная диффузия обязана вести себя иначе:
+    коэффициент проводимости падает на большом перепаде яркости, поэтому
+    ступенька у края почти не размывается, тогда как шум в плоских областях по
+    обе стороны от неё гасится сопоставимо с гауссовым размытием.
+
+    Args:
+        tmp_path (pathlib.Path): временный каталог теста
+
+    Returns:
+        None
+    """
+    rng = np.random.default_rng(3)
+    height, width = 64, 64
+    base = np.zeros((height, width, 3), dtype=np.float64)
+    base[:, :width // 2] = 40
+    base[:, width // 2:] = 210
+    noisy = np.clip(base + rng.normal(0, 12, base.shape), 0, 255).astype(np.uint8)
+    path = tmp_path / "edge.png"
+    Image.fromarray(noisy, "RGB").save(path)
+
+    diffused = run("Anisotropic_Diffusion", tmp_path, path,
+                    iterations=25, kappa=0.05, gamma=0.2).astype(float)
+    blurred = run("Gaussian_Blur", tmp_path, path, sigma=3.0).astype(float)
+    source = np.asarray(Image.open(path).convert("RGB")).astype(float)
+
+    column, span = width // 2, 3
+    source_step = abs(source[:, column + span].mean() - source[:, column - span].mean())
+    diffused_step = abs(diffused[:, column + span].mean() - diffused[:, column - span].mean())
+    blurred_step = abs(blurred[:, column + span].mean() - blurred[:, column - span].mean())
+
+    assert diffused_step > blurred_step, "диффузия смазала границу не меньше, чем гауссово размытие"
+    assert diffused_step > 0.8 * source_step, "диффузия заметно смазала резкую границу"
+
+    left_flat_var = noisy[:, :10].astype(float).var()
+    diffused_flat_var = diffused[:, :10].var()
+    assert diffused_flat_var < 0.5 * left_flat_var, "диффузия не подавила шум в однородной области"
+
+
 # ----------------------------------------------------------------------------
 # Валидация параметров
 # ----------------------------------------------------------------------------
@@ -681,6 +889,44 @@ def test_compression_quality_is_monotone(name, low, high, tmp_path, photo):
     ("Gamma_Correction", {"gamma": -1}),
     ("Bit_Depth_Reduction", {"bits": 0}),
     ("Bit_Depth_Reduction", {"bits": 9}),
+    ("AWGN", {"sigma": 0.0}),
+    ("AWGN", {"sigma": 0.2}),
+    ("Impulse", {"density": 0.0}),
+    ("Impulse", {"density": 0.1}),
+    ("Periodic", {"amplitude": 0.0}),
+    ("Periodic", {"amplitude": 0.3}),
+    ("Periodic", {"frequency": 0.5}),
+    ("Periodic", {"frequency": 200.0}),
+    ("Poisson", {"peak": 0.5}),
+    ("Poisson", {"peak": 2000.0}),
+    ("Salt_and_Pepper", {"density": 0.0}),
+    ("Salt_and_Pepper", {"density": 0.1}),
+    ("Speckle", {"variance": 0.0}),
+    ("Speckle", {"variance": 0.1}),
+    ("Bilateral_Filter", {"sigma_color": 0.0}),
+    ("Bilateral_Filter", {"sigma_color": 0.6}),
+    ("Bilateral_Filter", {"sigma_space": 0.5}),
+    ("Bilateral_Filter", {"sigma_space": 20.0}),
+    ("Box_Filter", {"window": 2}),
+    ("Box_Filter", {"window": 4}),
+    ("Gaussian_Blur", {"sigma": 0.1}),
+    ("Gaussian_Blur", {"sigma": 10.0}),
+    ("Homomorphic_Filter", {"gamma_low": 0.0}),
+    ("Homomorphic_Filter", {"gamma_high": 5.0}),
+    ("Homomorphic_Filter", {"cutoff": 5.0}),
+    ("Median_Filter", {"window": 4}),
+    ("Unsharp_Mask", {"amount": 0.0}),
+    ("Unsharp_Mask", {"radius": 0.1}),
+    ("Unsharp_Mask", {"threshold": 1.5}),
+    ("Wiener_Filter", {"window": 2}),
+    ("Wiener_Filter", {"noise": -1.0}),
+    ("Anisotropic_Diffusion", {"iterations": 0}),
+    ("Anisotropic_Diffusion", {"iterations": 100}),
+    ("Anisotropic_Diffusion", {"kappa": 0.0}),
+    ("Anisotropic_Diffusion", {"kappa": 1.0}),
+    ("Anisotropic_Diffusion", {"gamma": 0.0}),
+    ("Anisotropic_Diffusion", {"gamma": 0.5}),
+    ("Anisotropic_Diffusion", {"option": 3}),
 ])
 def test_invalid_parameters_raise_value_error(name, params, tmp_path, photo):
     """
