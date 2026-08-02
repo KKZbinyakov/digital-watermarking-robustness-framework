@@ -10,10 +10,7 @@ class Bit_Depth_Reduction(Ready_Color_Brightness_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(args: dict = {"input_data": None, "output_data": None}):
         """
         Огрубляет битовую глубину изображения и сохраняет результат.
 

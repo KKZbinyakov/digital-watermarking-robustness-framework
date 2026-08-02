@@ -1,4 +1,5 @@
 """Папка реализации должна совпадать с её категорией из базового класса."""
+
 import inspect
 
 import pytest
@@ -10,7 +11,7 @@ SUFFIXES = ("_Attacks", "_Expertise", "_Embeddings", "_Datasets")
 
 
 def category_folder(base_name):
-    name = base_name[len("Ready_"):]
+    name = base_name[len("Ready_") :]
     for suffix in SUFFIXES:
         if name.endswith(suffix):
             return name[: -len(suffix)].lower()
@@ -19,14 +20,12 @@ def category_folder(base_name):
 
 def implementations(registry):
     """Только конкретные реализации: сами категории Ready_* пропускаем."""
-    return [cls for name, cls in sorted(registry.items())
-            if not name.startswith("Ready_")]
+    return [cls for name, cls in sorted(registry.items()) if not name.startswith("Ready_")]
 
 
 @pytest.mark.parametrize(
     "cls",
-    implementations(Attack_Core.get_registered_attacks())
-    + implementations(Expertise_Core.get_registered_expertises()),
+    implementations(Attack_Core.get_registered_attacks()) + implementations(Expertise_Core.get_registered_expertises()),
     ids=lambda cls: cls.__name__,
 )
 def test_folder_matches_category(cls):
@@ -35,7 +34,4 @@ def test_folder_matches_category(cls):
 
     expected = category_folder(bases[0])
     path = inspect.getfile(cls).replace("\\", "/")
-    assert f"/{expected}/" in path, (
-        f"{cls.__name__} наследует {bases[0]} (категория {expected!r}), "
-        f"но лежит в {path}"
-    )
+    assert f"/{expected}/" in path, f"{cls.__name__} наследует {bases[0]} (категория {expected!r}), но лежит в {path}"

@@ -10,10 +10,7 @@ class Gamma_Correction(Ready_Color_Brightness_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(args: dict = {"input_data": None, "output_data": None}):
         """
         Применяет гамма-коррекцию к изображению и сохраняет результат.
 
@@ -40,5 +37,5 @@ class Gamma_Correction(Ready_Color_Brightness_Attacks):
             raise ValueError(f"gamma должна быть больше нуля, получено {gamma}")
 
         levels = np.arange(256, dtype=np.float64) / 255.0
-        lookup = np.clip(255.0 * levels ** gamma, 0, 255).round().astype(np.uint8)
+        lookup = np.clip(255.0 * levels**gamma, 0, 255).round().astype(np.uint8)
         save_rgb(lookup[load_rgb(input_data)], output_data)

@@ -7,10 +7,7 @@ class Color_Space_Noise(Ready_Color_Brightness_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(args: dict = {"input_data": None, "output_data": None}):
         """
         Добавляет шум в заданном цветовом пространстве и сохраняет результат.
 
@@ -29,7 +26,7 @@ class Color_Space_Noise(Ready_Color_Brightness_Attacks):
         output_data = args["output_data"]
         space = args.get("space", "YCbCr")
         noise_std = float(args.get("noise_std", 10.0))
-        seed = args.get("seed", None)
+        seed = args.get("seed")
 
         rng = np.random.default_rng(seed)
         img = Image.open(input_data).convert("RGB")

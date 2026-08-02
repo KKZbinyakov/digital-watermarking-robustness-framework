@@ -18,6 +18,7 @@
 неправильную картинку, а атака яркости с дефолтными параметрами не делала ничего
 и давала нулевой BER.
 """
+
 import hashlib
 import inspect
 
@@ -28,7 +29,6 @@ from PIL import Image
 import dwarf
 import dwarf.ready_solutions.attack_solutions  # noqa: F401  наполняет реестр атак
 from dwarf import Attack_Core
-
 
 LOSSLESS = frozenset({"Tiff", "Flif"})
 """Атаки без потерь: пиксели обязаны остаться прежними, BER на них нулевой."""
@@ -53,11 +53,7 @@ def _discover():
     Returns:
         dict: отображение имени атаки в её класс
     """
-    return {
-        name: cls
-        for name, cls in Attack_Core.get_registered_attacks().items()
-        if not inspect.isabstract(cls)
-    }
+    return {name: cls for name, cls in Attack_Core.get_registered_attacks().items() if not inspect.isabstract(cls)}
 
 
 ATTACKS = _discover()
@@ -133,15 +129,14 @@ def photolike():
     Returns:
         callable: функция (высота, ширина) -> np.ndarray формы (H, W, 3) типа uint8
     """
+
     def build(height=96, width=128, seed=20240501):
         rng = np.random.default_rng(seed)
         rows, columns = np.mgrid[0:height, 0:width].astype(float)
-        base = (0.5
-                + 0.25 * np.sin(2 * np.pi * columns / width)
-                + 0.15 * np.cos(2 * np.pi * rows / height))
+        base = 0.5 + 0.25 * np.sin(2 * np.pi * columns / width) + 0.15 * np.cos(2 * np.pi * rows / height)
         array = np.stack([base * 210 + 20, base * 190 + 30, base * 170 + 40], axis=-1)
-        array[height // 5:height // 2, width // 5:width // 2] *= 0.55
-        array[3 * height // 5:, 3 * width // 5:] *= 1.5
+        array[height // 5 : height // 2, width // 5 : width // 2] *= 0.55
+        array[3 * height // 5 :, 3 * width // 5 :] *= 1.5
         array += rng.normal(0, 6, array.shape)
         return np.clip(array, 0, 255).astype(np.uint8)
 
@@ -151,6 +146,7 @@ def photolike():
 # ----------------------------------------------------------------------------
 # Контракт
 # ----------------------------------------------------------------------------
+
 
 def test_registry_is_not_empty():
     """
@@ -244,6 +240,7 @@ def test_shape_preserved(name, tmp_path, photo):
 # Семантика
 # ----------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("name", sorted(set(NAMES) - LOSSLESS - CHANGES_SHAPE))
 def test_defaults_actually_attack(name, tmp_path, photo):
     """
@@ -264,8 +261,7 @@ def test_defaults_actually_attack(name, tmp_path, photo):
     source = np.asarray(Image.open(photo).convert("RGB"))
     result = run(name, tmp_path, photo)
     assert not np.array_equal(result, source), (
-        f"{name} с параметрами по умолчанию не изменила изображение: "
-        f"в бенчмарке это даст ложный нулевой BER"
+        f"{name} с параметрами по умолчанию не изменила изображение: в бенчмарке это даст ложный нулевой BER"
     )
 
 
@@ -333,6 +329,7 @@ def test_seed_changes_result(name, tmp_path, photo):
 # Устойчивость
 # ----------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("shape", [(1, 1), (1, 64), (64, 1), (3, 3), (5, 7)])
 @pytest.mark.parametrize("name", NAMES)
 def test_degenerate_sizes(name, shape, tmp_path):
@@ -398,6 +395,7 @@ def test_input_modes(name, mode, tmp_path):
 # Инварианты алгоритмов
 # ----------------------------------------------------------------------------
 
+
 @pytest.mark.parametrize("levels", [2, 4, 8])
 def test_dithering_preserves_mean(levels, tmp_path, photo):
     """
@@ -453,8 +451,7 @@ def test_quantization_palette_size(colors, tmp_path, photo):
     Returns:
         None
     """
-    result = run("Color_Quantization", tmp_path, photo,
-                 method="kmeans", colors=colors, seed=0)
+    result = run("Color_Quantization", tmp_path, photo, method="kmeans", colors=colors, seed=0)
     unique = np.unique(result.reshape(-1, 3), axis=0)
     assert len(unique) <= colors
 
@@ -483,10 +480,8 @@ def test_clahe_bins_preserve_structure(bins, tmp_path, photo):
     Returns:
         None
     """
-    reference = run("Histogram_Equalization", tmp_path, photo,
-                    method="clahe", bins=256).astype(float)
-    result = run("Histogram_Equalization", tmp_path, photo,
-                 method="clahe", bins=bins).astype(float)
+    reference = run("Histogram_Equalization", tmp_path, photo, method="clahe", bins=256).astype(float)
+    result = run("Histogram_Equalization", tmp_path, photo, method="clahe", bins=bins).astype(float)
     correlation = np.corrcoef(result.ravel(), reference.ravel())[0, 1]
     assert correlation > 0.9, f"при bins={bins} корреляция с bins=256 всего {correlation:.4f}"
 
@@ -635,10 +630,13 @@ def test_bit_depth_level_count(bits, expected, tmp_path, photo):
     assert len(np.unique(result)) <= expected
 
 
-@pytest.mark.parametrize("name, low, high", [
-    ("Jpeg", "quality", "quality"),
-    ("Webp", "quality", "quality"),
-])
+@pytest.mark.parametrize(
+    "name, low, high",
+    [
+        ("Jpeg", "quality", "quality"),
+        ("Webp", "quality", "quality"),
+    ],
+)
 def test_compression_quality_is_monotone(name, low, high, tmp_path, photo):
     """
     Проверяет, что более высокое качество кодека даёт меньшее искажение.
@@ -666,22 +664,26 @@ def test_compression_quality_is_monotone(name, low, high, tmp_path, photo):
 # Валидация параметров
 # ----------------------------------------------------------------------------
 
-@pytest.mark.parametrize("name, params", [
-    ("Dithering", {"levels": 1}),
-    ("Dithering", {"method": "нет такого"}),
-    ("Dithering", {"method": "ordered", "matrix_size": 1}),
-    ("Histogram_Equalization", {"method": "нет такого"}),
-    ("Histogram_Equalization", {"method": "clahe", "tiles": 1}),
-    ("Histogram_Equalization", {"method": "clahe", "bins": 1}),
-    ("Histogram_Equalization", {"method": "clahe", "bins": 512}),
-    ("Color_Quantization", {"colors": 1}),
-    ("Color_Quantization", {"method": "нет такого"}),
-    ("Color_Quantization", {"method": "kmeans", "colors": 64, "sample_size": 32}),
-    ("Gamma_Correction", {"gamma": 0}),
-    ("Gamma_Correction", {"gamma": -1}),
-    ("Bit_Depth_Reduction", {"bits": 0}),
-    ("Bit_Depth_Reduction", {"bits": 9}),
-])
+
+@pytest.mark.parametrize(
+    "name, params",
+    [
+        ("Dithering", {"levels": 1}),
+        ("Dithering", {"method": "нет такого"}),
+        ("Dithering", {"method": "ordered", "matrix_size": 1}),
+        ("Histogram_Equalization", {"method": "нет такого"}),
+        ("Histogram_Equalization", {"method": "clahe", "tiles": 1}),
+        ("Histogram_Equalization", {"method": "clahe", "bins": 1}),
+        ("Histogram_Equalization", {"method": "clahe", "bins": 512}),
+        ("Color_Quantization", {"colors": 1}),
+        ("Color_Quantization", {"method": "нет такого"}),
+        ("Color_Quantization", {"method": "kmeans", "colors": 64, "sample_size": 32}),
+        ("Gamma_Correction", {"gamma": 0}),
+        ("Gamma_Correction", {"gamma": -1}),
+        ("Bit_Depth_Reduction", {"bits": 0}),
+        ("Bit_Depth_Reduction", {"bits": 9}),
+    ],
+)
 def test_invalid_parameters_raise_value_error(name, params, tmp_path, photo):
     """
     Проверяет, что недопустимые параметры дают ValueError с внятным текстом.
@@ -699,16 +701,19 @@ def test_invalid_parameters_raise_value_error(name, params, tmp_path, photo):
         None
     """
     with pytest.raises(ValueError):
-        ATTACKS[name].attack({
-            "input_data": photo,
-            "output_data": str(tmp_path / "invalid.png"),
-            **params,
-        })
+        ATTACKS[name].attack(
+            {
+                "input_data": photo,
+                "output_data": str(tmp_path / "invalid.png"),
+                **params,
+            }
+        )
 
 
 # ----------------------------------------------------------------------------
 # Сверка с эталонными реализациями
 # ----------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize("size", [(96, 128), (240, 320)])
 def test_clahe_matches_opencv(size, tmp_path, photolike):
@@ -742,16 +747,19 @@ def test_clahe_matches_opencv(size, tmp_path, photolike):
     Image.fromarray(source, "RGB").save(path)
 
     output = tmp_path / "reference_out.png"
-    ATTACKS["Histogram_Equalization"].attack({
-        "input_data": str(path), "output_data": str(output),
-        "method": "clahe", "tiles": 8, "clip_limit": 2.0,
-    })
+    ATTACKS["Histogram_Equalization"].attack(
+        {
+            "input_data": str(path),
+            "output_data": str(output),
+            "method": "clahe",
+            "tiles": 8,
+            "clip_limit": 2.0,
+        }
+    )
 
     mine = np.asarray(Image.open(output).convert("YCbCr"))[:, :, 0].astype(float)
     luma = cv2.cvtColor(source, cv2.COLOR_RGB2YCrCb)[:, :, 0]
     reference = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8)).apply(luma).astype(float)
 
     correlation = np.corrcoef(mine.ravel(), reference.ravel())[0, 1]
-    assert correlation > 0.98, (
-        f"корреляция с OpenCV всего {correlation:.4f} на кадре {height}x{width}"
-    )
+    assert correlation > 0.98, f"корреляция с OpenCV всего {correlation:.4f} на кадре {height}x{width}"

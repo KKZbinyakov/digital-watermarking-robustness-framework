@@ -10,10 +10,7 @@ class Precision(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "y_true": None,
-        "y_pred": None
-    }):
+    def expertise(args: dict = {"y_true": None, "y_pred": None}):
         """
         Считает точность бинарного детектора.
 

@@ -15,7 +15,7 @@ class BER(Ready_Robustness_Expertise):
             "original_bits": "",
             "extracted_bits": "",
             "allow_length_mismatch": False,
-        }
+        },
     ):
         """
         Считает долю несовпадающих бит между исходным и извлечённым ЦВЗ.

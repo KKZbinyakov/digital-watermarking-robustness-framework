@@ -10,21 +10,17 @@ AttributeError.
 а лишь выкидывает соответствующие атаки из реестра.
 Такой случай разбирается отдельно и сопровождается предупреждением.
 """
+
 from dwarf.common_utils.common_utils import *
 
-_available = {module.name
-              for module in pkgutil.walk_packages(__path__, prefix=__name__ + ".")
-              if not module.ispkg}
+_available = {module.name for module in pkgutil.walk_packages(__path__, prefix=__name__ + ".") if not module.ispkg}
 
 for _name in sorted(_available):
     importlib.import_module(_name)
 
 _stems = {_full.rsplit(".", 1)[-1] for _full in _available}
 
-_uncompiled = sorted(
-    source.stem for source in Path(__path__[0]).rglob("*.pyx")
-    if source.stem not in _stems
-)
+_uncompiled = sorted(source.stem for source in Path(__path__[0]).rglob("*.pyx") if source.stem not in _stems)
 
 if _uncompiled:
     warnings.warn(

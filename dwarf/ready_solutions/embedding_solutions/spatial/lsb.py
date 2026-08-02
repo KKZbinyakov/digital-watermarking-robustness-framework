@@ -7,7 +7,7 @@ class LSB(Ready_Spatial_Embeddings):
         args: dict = {
             "input_image": [[[0]]],
             "watermark_bits": "0",
-        }
+        },
     ):
         input_image = args["image_path"]
         watermark_bits = args["watermark_bits"]

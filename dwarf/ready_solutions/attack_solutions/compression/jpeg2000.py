@@ -7,10 +7,7 @@ class Jpeg2000(Ready_Compression_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(args: dict = {"input_data": None, "output_data": None}):
         """
         Пережимает изображение кодеком JPEG2000 и сохраняет результат.
 
@@ -29,7 +26,8 @@ class Jpeg2000(Ready_Compression_Attacks):
 
         img = Image.open(input_data).convert("RGB")
         roundtrip_buffer(
-            img, "JPEG2000",
+            img,
+            "JPEG2000",
             quality_mode="rates",
             quality_layers=[compression_ratio],
             irreversible=True,

@@ -9,10 +9,7 @@ class Tiff(Ready_Compression_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(args: dict = {"input_data": None, "output_data": None}):
         """
         Перекодирует изображение в TIFF и сохраняет результат.
 

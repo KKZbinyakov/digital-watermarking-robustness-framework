@@ -7,10 +7,7 @@ class AUC(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "y_true": None,
-        "y_scores": None
-    }):
+    def expertise(args: dict = {"y_true": None, "y_scores": None}):
         """
         Считает AUC через статистику Манна-Уитни.
 
@@ -31,9 +28,7 @@ class AUC(Ready_Robustness_Expertise):
         y_true = np.asarray(args["y_true"])
         y_scores = np.asarray(args["y_scores"], dtype=float)
         if y_true.shape != y_scores.shape:
-            raise ValueError(
-                f"формы не совпадают: метки {y_true.shape}, оценки {y_scores.shape}"
-            )
+            raise ValueError(f"формы не совпадают: метки {y_true.shape}, оценки {y_scores.shape}")
 
         positives = int((y_true == 1).sum())
         negatives = int((y_true == 0).sum())
@@ -41,5 +36,4 @@ class AUC(Ready_Robustness_Expertise):
             return float("nan")
 
         ranks = avg_ranks(y_scores)
-        return float((ranks[y_true == 1].sum() - positives * (positives + 1) / 2)
-                     / (positives * negatives))
+        return float((ranks[y_true == 1].sum() - positives * (positives + 1) / 2) / (positives * negatives))

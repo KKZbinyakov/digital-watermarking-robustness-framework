@@ -7,10 +7,7 @@ class NC(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "original_bits": None,
-        "extracted_bits": None
-    }):
+    def expertise(args: dict = {"original_bits": None, "extracted_bits": None}):
         """
         Считает нормированную корреляцию между исходным и извлечённым ЦВЗ.
 
@@ -27,7 +24,8 @@ class NC(Ready_Robustness_Expertise):
             ValueError: если длины различаются без allow_length_mismatch, либо обе строки пусты
         """
         original_bits, extracted_bits, length = align_bits(
-            args["original_bits"], args["extracted_bits"],
+            args["original_bits"],
+            args["extracted_bits"],
             bool(args.get("allow_length_mismatch", False)),
         )
         if length == 0:

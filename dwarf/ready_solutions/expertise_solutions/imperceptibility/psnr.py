@@ -7,10 +7,7 @@ class PSNR(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "original_path": None,
-        "distorted_path": None
-    }):
+    def expertise(args: dict = {"original_path": None, "distorted_path": None}):
         """
         Считает PSNR между двумя изображениями по каналам RGB.
 
@@ -27,4 +24,4 @@ class PSNR(Ready_Imperceptibility_Expertise):
         mean_squared_error = np.mean((original - distorted) ** 2)
         if mean_squared_error == 0:
             return float("inf")
-        return float(10 * np.log10(255 ** 2 / mean_squared_error))
+        return float(10 * np.log10(255**2 / mean_squared_error))

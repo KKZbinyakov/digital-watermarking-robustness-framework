@@ -10,10 +10,7 @@ class Watermark_PSNR(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "original_watermark_path": None,
-        "extracted_watermark_path": None
-    }):
+    def expertise(args: dict = {"original_watermark_path": None, "extracted_watermark_path": None}):
         """
         Считает PSNR между двумя изображениями-знаками по каналу яркости.
 
@@ -38,4 +35,4 @@ class Watermark_PSNR(Ready_Robustness_Expertise):
         mean_squared_error = np.mean((original - extracted) ** 2)
         if mean_squared_error == 0:
             return float("inf")
-        return float(10 * np.log10(255 ** 2 / mean_squared_error))
+        return float(10 * np.log10(255**2 / mean_squared_error))

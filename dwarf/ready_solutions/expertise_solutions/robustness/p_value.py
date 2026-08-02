@@ -7,10 +7,7 @@ class P_Value(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "statistic": None,
-        "null_samples": None
-    }):
+    def expertise(args: dict = {"statistic": None, "null_samples": None}):
         """
         Считает долю выборок нулевого распределения, не меньших наблюдаемой статистики.
 
