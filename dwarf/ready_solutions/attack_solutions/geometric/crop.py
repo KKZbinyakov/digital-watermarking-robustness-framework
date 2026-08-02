@@ -1,6 +1,6 @@
 """Атака кадрирования: вырезает часть кадра и восстанавливает исходный размер."""
-from ...utils.attack_utils import *
 
+from ...utils.attack_utils import *
 
 _ANCHORS = {
     "center": ("middle", "middle"),
@@ -92,7 +92,9 @@ def _fill_color(fill) -> np.ndarray:
             f"fill должен быть уровнем 0..255 или тройкой RGB, получено {fill!r}"
         )
     if any(not 0 <= level <= 255 for level in levels):
-        raise ValueError(f"уровни fill должны быть в диапазоне 0..255, получено {fill!r}")
+        raise ValueError(
+            f"уровни fill должны быть в диапазоне 0..255, получено {fill!r}"
+        )
 
     return np.round(levels).astype(np.uint8)
 
@@ -108,17 +110,23 @@ class Crop(Ready_Geometric_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(
+        args: dict = {
+            "input_image": [[[0]]],
+            "ratio": 0.5,
+            "position": "center",
+            "mode": "pad",
+            "fill": 0,
+            "resample": "bicubic",
+            "seed": None,
+        }
+    ):
         """
         Кадрирует изображение и сохраняет результат.
 
         Args:
             args (dict): параметры атаки
-                input_data (str): путь к исходному изображению
-                output_data (str): путь для сохранения результата
+                input_image (list(list(list(int))): матрица изображения
                 ratio (float): доля сохраняемой стороны по каждой оси, 0 < ratio <= 1;
                     при 0.5 остаётся четверть площади (по умолчанию 0.5)
                 position (str): положение области: 'center', 'top_left', 'top_right',
@@ -134,7 +142,7 @@ class Crop(Ready_Geometric_Attacks):
                     (по умолчанию None)
 
         Returns:
-            None
+            output_image (list(list(list(int)))): матрица изображения после атаки
 
         Raises:
             ValueError: если ratio вне диапазона (0, 1] либо position, mode, resample
@@ -178,21 +186,19 @@ class Crop(Ready_Geometric_Attacks):
         left = _origin(anchor_x, width, kept_width, rng)
 
         region = np.ascontiguousarray(
-            array[top:top + kept_height, left:left + kept_width]
+            array[top : top + kept_height, left : left + kept_width]
         )
 
         if mode == "raw":
-            save_rgb(region, output_data)
-            return
-
+            return region
+        """
         if mode == "resize":
             restored = Image.fromarray(region, "RGB").resize(
                 (width, height), _RESAMPLING[resample]
             )
-            restored.save(output_data)
-            return
-
+            return restored
+        """
         canvas = np.empty_like(array)
         canvas[:, :] = color
-        canvas[top:top + kept_height, left:left + kept_width] = region
-        save_rgb(canvas, output_data)
+        canvas[top : top + kept_height, left : left + kept_width] = region
+        return canvas

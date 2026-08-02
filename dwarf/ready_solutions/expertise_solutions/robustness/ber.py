@@ -10,10 +10,13 @@ class BER(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "original_bits": None,
-        "extracted_bits": None
-    }):
+    def expertise(
+        args: dict = {
+            "original_bits": "",
+            "extracted_bits": "",
+            "allow_length_mismatch": False,
+        }
+    ):
         """
         Считает долю несовпадающих бит между исходным и извлечённым ЦВЗ.
 
@@ -30,12 +33,10 @@ class BER(Ready_Robustness_Expertise):
             ValueError: если длины различаются без allow_length_mismatch, либо обе строки пусты
         """
         original_bits, extracted_bits, length = align_bits(
-            args["original_bits"], args["extracted_bits"],
+            args["original_bits"],
+            args["extracted_bits"],
             bool(args.get("allow_length_mismatch", False)),
         )
         if length == 0:
             raise ValueError("нечего сравнивать: обе битовые строки пусты")
-
-        original = np.frombuffer(original_bits.encode("ascii"), dtype=np.uint8)
-        extracted = np.frombuffer(extracted_bits.encode("ascii"), dtype=np.uint8)
-        return float(np.count_nonzero(original != extracted) / length)
+        return float(np.count_nonzero(original_bits != extracted_bits) / length)
