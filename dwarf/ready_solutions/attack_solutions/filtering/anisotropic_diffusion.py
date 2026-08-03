@@ -1,4 +1,4 @@
-from ...utils.attack_utils import *
+from dwarf.ready_solutions.utils.attack_utils import *
 
 class Anisotropic_Diffusion(Ready_Filtering_Attacks):
     """
@@ -14,11 +14,14 @@ class Anisotropic_Diffusion(Ready_Filtering_Attacks):
 
     @staticmethod
     def attack(args: dict = {
-            "input_data": None,
-            "output_data": None
+            "input_image": [[[0]]],
+            "iterations": 15,
+            "kappa": 0.1,
+            "gamma": 0.2,
+            "option": 1
     }):
         """
-        Применяет анизотропную диффузию Перона-Малик к изображению и сохраняет результат.
+        Применяет анизотропную диффузию Перона-Малик к изображению и возвращает результат.
 
         Диффузия ведётся одновременно по всем трём каналам RGB на кадре,
         нормированном к диапазону 0..1. Края кадра обрабатываются отражением
@@ -26,8 +29,7 @@ class Anisotropic_Diffusion(Ready_Filtering_Attacks):
 
         Args:
             args (dict): параметры атаки
-                input_data (str): путь к исходному изображению
-                output_data (str): путь для сохранения результата
+                input_image (list(list(list(int)))): матрица изображения
                 iterations (int): число итераций диффузии, диапазон [1, 50] (по умолчанию 15)
                 kappa (float): порог проводимости в долях канала 0..1, диапазон [0.01, 0.5] (по умолчанию 0.1)
                 gamma (float): шаг диффузии за итерацию, диапазон (0.0, 0.25] (по умолчанию 0.2)
@@ -35,30 +37,28 @@ class Anisotropic_Diffusion(Ready_Filtering_Attacks):
                     границы; 2 — рациональная, слабее подавляет широкие плавные перепады (по умолчанию 1)
 
         Returns:
-            None
+            output_image (list(list(list(int)))): матрица изображения после атаки
 
         Raises:
             ValueError: если iterations вне диапазона [1, 50], kappa вне диапазона [0.01, 0.5],
                 gamma вне диапазона (0.0, 0.25] или option не равен 1 или 2
         """
-        input_data = args["input_data"]
-        output_data = args["output_data"]
+        input_image = args["input_image"]
         iterations = int(args.get("iterations", 15))
         kappa = float(args.get("kappa", 0.1))
         gamma = float(args.get("gamma", 0.2))
         option = int(args.get("option", 1))
 
         if not (1 <= iterations <= 50):
-            raise ValueError("iterations должен быть в диапазоне [1-50]")
+            raise ValueError("iterations must be in range [1-50]")
         if not (0.01 <= kappa <= 0.5):
-            raise ValueError("kappa должна быть в диапазоне [0.01-0.5]")
+            raise ValueError("kappa must be in range [0.01-0.5]")
         if not (0.0 < gamma <= 0.25):
-            raise ValueError("gamma должна быть в диапазоне (0.0-0.25]")
+            raise ValueError("gamma must be in range (0.0-0.25]")
         if option not in (1, 2):
-            raise ValueError("option должен быть 1 или 2")
+            raise ValueError("option must be 1 or 2")
 
-        img = Image.open(input_data).convert("RGB")
-        data = np.array(img, dtype=np.float32) / 255.0
+        data = np.array(input_image, dtype=np.float32) / 255.0
 
         for _ in range(iterations):
             padded = np.pad(data, ((1, 1), (1, 1), (0, 0)), mode="edge")
@@ -82,5 +82,4 @@ class Anisotropic_Diffusion(Ready_Filtering_Attacks):
             data = data + gamma * (c_n * north + c_s * south + c_e * east + c_w * west)
 
         data = np.clip(data, 0, 1)
-        filtered_img = Image.fromarray((data * 255).astype(np.uint8))
-        filtered_img.save(output_data)
+        return (data * 255).astype(np.uint8).tolist()

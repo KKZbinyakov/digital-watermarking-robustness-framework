@@ -1,4 +1,4 @@
-from ...utils.attack_utils import *
+from dwarf.ready_solutions.utils.attack_utils import *
 from scipy.signal import wiener
 
 class Wiener_Filter(Ready_Filtering_Attacks):
@@ -12,37 +12,35 @@ class Wiener_Filter(Ready_Filtering_Attacks):
 
     @staticmethod
     def attack(args: dict = {
-                    "input_data": None,
-                    "output_data": None
+                    "input_image": [[[0]]],
+                    "window": 5,
+                    "noise": 0.0
     }):
         """
-        Применяет винеровский фильтр к каждому каналу изображения и сохраняет результат.
+        Применяет винеровский фильтр к каждому каналу изображения и возвращает результат.
 
         Args:
             args (dict): параметры атаки
-                input_data (str): путь к исходному изображению
-                output_data (str): путь для сохранения результата
+                input_image (list(list(list(int)))): матрица изображения
                 window (int): размер окна фильтра, нечётное число >= 3 (по умолчанию 5)
                 noise (float): оценка дисперсии шума, при 0.0 оценивается автоматически по локальной дисперсии (по умолчанию 0.0)
 
         Returns:
-            None
+            output_image (list(list(list(int)))): матрица изображения после атаки
 
         Raises:
             ValueError: если window меньше 3 или чётное, либо noise отрицательный
         """
-        input_data = args["input_data"]
-        output_data = args["output_data"]
+        input_image = args["input_image"]
         window = args.get("window", 5)
         noise = float(args.get("noise", 0.0))
-        
+
         if window < 3 or window % 2 == 0:
-            raise ValueError("Размер окна должен быть нечётным числом >= 3")
+            raise ValueError("Window size must be an odd number >= 3")
         if noise is not None and noise < 0:
-            raise ValueError("Оценка шума не может быть отрицательной")
-        
-        img = Image.open(input_data).convert("RGB")
-        data = np.array(img, dtype=np.float32) / 255.0
+            raise ValueError("Noise estimate cannot be negative")
+
+        data = np.array(input_image, dtype=np.float32) / 255.0
 
         filtered = np.empty_like(data)
         for c in range(data.shape[2]):
@@ -50,5 +48,4 @@ class Wiener_Filter(Ready_Filtering_Attacks):
 
         filtered = np.nan_to_num(filtered, nan=0.0)
         filtered = np.clip(filtered, 0, 1)
-        filtered_img = Image.fromarray((filtered * 255).astype(np.uint8))
-        filtered_img.save(output_data)
+        return (filtered * 255).astype(np.uint8).tolist()
