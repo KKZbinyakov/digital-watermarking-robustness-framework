@@ -142,8 +142,7 @@ class Crop(Ready_Geometric_Attacks):
             ValueError: если ratio вне диапазона (0, 1] либо position, mode, resample
                 или fill недопустимы
         """
-        input_data = args["input_data"]
-        output_data = args["output_data"]
+        input_image = args["input_image"]
         ratio = float(args.get("ratio", 0.5))
         position = args.get("position", "center")
         mode = args.get("mode", "pad")
