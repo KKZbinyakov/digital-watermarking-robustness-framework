@@ -7,7 +7,10 @@ class Webp(Ready_Compression_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {"input_data": None, "output_data": None}):
+    def attack(args: dict = {
+        "input_data": None,
+        "output_data": None
+    }):
         """
         Пережимает изображение кодеком WebP и сохраняет результат.
 

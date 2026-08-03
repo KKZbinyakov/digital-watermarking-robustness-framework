@@ -5,9 +5,11 @@
 FSIM, работа с битовыми строками и метками детектора, а также ленивое создание
 нейросетевых метрик pyiqa.
 """
-
 import numpy as np
+
 from PIL import Image
+
+from ...core.expertise_orchestrator.expertise_core import Expertise_Core, Ready_Robustness_Expertise, Ready_Imperceptibility_Expertise
 
 
 def load_gray(image_path: str) -> np.ndarray:
@@ -51,7 +53,7 @@ def gauss1d(size: int = 11, sigma: float = 1.5) -> np.ndarray:
         np.ndarray: массив длины size типа float64, сумма равна единице
     """
     positions = np.arange(size) - size // 2
-    kernel = np.exp(-(positions**2) / (2 * sigma**2))
+    kernel = np.exp(-(positions ** 2) / (2 * sigma ** 2))
     return kernel / kernel.sum()
 
 
@@ -106,23 +108,25 @@ def ssim_maps(first: np.ndarray, second: np.ndarray, kernel: np.ndarray = None) 
     if kernel is None:
         kernel = gauss1d(11, 1.5)
     if min(first.shape) < kernel.shape[0]:
-        raise ValueError(f"изображение {first.shape} меньше окна {kernel.shape[0]}: SSIM не определён")
+        raise ValueError(
+            f"изображение {first.shape} меньше окна {kernel.shape[0]}: SSIM не определён"
+        )
     stabilizer_l = (0.01 * 255) ** 2
     stabilizer_c = (0.03 * 255) ** 2
 
     mean_first = sepfilter(first, kernel, "valid")
     mean_second = sepfilter(second, kernel, "valid")
-    mean_first_sq = mean_first**2
-    mean_second_sq = mean_second**2
+    mean_first_sq = mean_first ** 2
+    mean_second_sq = mean_second ** 2
     mean_product = mean_first * mean_second
 
     var_first = sepfilter(first * first, kernel, "valid") - mean_first_sq
     var_second = sepfilter(second * second, kernel, "valid") - mean_second_sq
     covariance = sepfilter(first * second, kernel, "valid") - mean_product
 
-    ssim_map = ((2 * mean_product + stabilizer_l) * (2 * covariance + stabilizer_c)) / (
-        (mean_first_sq + mean_second_sq + stabilizer_l) * (var_first + var_second + stabilizer_c)
-    )
+    ssim_map = (((2 * mean_product + stabilizer_l) * (2 * covariance + stabilizer_c))
+                / ((mean_first_sq + mean_second_sq + stabilizer_l)
+                   * (var_first + var_second + stabilizer_c)))
     cs_map = (2 * covariance + stabilizer_c) / (var_first + var_second + stabilizer_c)
     return ssim_map, cs_map
 
@@ -166,7 +170,8 @@ def conv2(image: np.ndarray, kernel: np.ndarray) -> np.ndarray:
     result = np.zeros_like(image, dtype=np.float64)
     for row in range(kernel_height):
         for column in range(kernel_width):
-            result += kernel[row, column] * padded[row : row + image.shape[0], column : column + image.shape[1]]
+            result += kernel[row, column] * padded[row:row + image.shape[0],
+                                                   column:column + image.shape[1]]
     return result
 
 
@@ -182,7 +187,7 @@ def scharr_gm(image: np.ndarray) -> np.ndarray:
     """
     horizontal = conv2(image, SCHARR_X)
     vertical = conv2(image, SCHARR_X.T)
-    return np.sqrt(horizontal**2 + vertical**2)
+    return np.sqrt(horizontal ** 2 + vertical ** 2)
 
 
 def downsample(image: np.ndarray, factor: int) -> np.ndarray:
@@ -244,25 +249,17 @@ def freq_grid(rows: int, cols: int) -> tuple:
         y_range = np.arange(-rows / 2, rows / 2) / rows
 
     x_grid, y_grid = np.meshgrid(x_range, y_range)
-    radius = np.fft.ifftshift(np.sqrt(x_grid**2 + y_grid**2))
+    radius = np.fft.ifftshift(np.sqrt(x_grid ** 2 + y_grid ** 2))
     theta = np.fft.ifftshift(np.arctan2(-y_grid, x_grid))
     radius[0, 0] = 1
     return radius, np.sin(theta), np.cos(theta)
 
 
-def phase_congruency(
-    image: np.ndarray,
-    nscale: int = 4,
-    norient: int = 4,
-    min_wavelength: float = 6,
-    mult: float = 2.0,
-    sigma_onf: float = 0.55,
-    dtheta_on_sigma: float = 1.2,
-    noise_k: float = 2.0,
-    cutoff: float = 0.5,
-    gain: float = 10.0,
-    eps: float = 1e-4,
-) -> np.ndarray:
+def phase_congruency(image: np.ndarray, nscale: int = 4, norient: int = 4,
+                     min_wavelength: float = 6, mult: float = 2.0,
+                     sigma_onf: float = 0.55, dtheta_on_sigma: float = 1.2,
+                     noise_k: float = 2.0, cutoff: float = 0.5,
+                     gain: float = 10.0, eps: float = 1e-4) -> np.ndarray:
     """
     Считает фазовую согласованность по Ковеси (вариант phasecong2 из FSIM).
 
@@ -293,8 +290,8 @@ def phase_congruency(
 
     log_gabors = []
     for scale in range(nscale):
-        center = 1.0 / (min_wavelength * (mult**scale))
-        gabor = np.exp(-((np.log(radius / center)) ** 2) / (2 * np.log(sigma_onf) ** 2)) * low_pass
+        center = 1.0 / (min_wavelength * (mult ** scale))
+        gabor = np.exp(-(np.log(radius / center)) ** 2 / (2 * np.log(sigma_onf) ** 2)) * low_pass
         gabor[0, 0] = 0
         log_gabors.append(gabor)
 
@@ -307,7 +304,7 @@ def phase_congruency(
         angle = orientation * np.pi / norient
         delta_sin = sintheta * np.cos(angle) - costheta * np.sin(angle)
         delta_cos = costheta * np.cos(angle) + sintheta * np.sin(angle)
-        spread = np.exp(-(np.abs(np.arctan2(delta_sin, delta_cos)) ** 2) / (2 * theta_sigma**2))
+        spread = np.exp(-np.abs(np.arctan2(delta_sin, delta_cos)) ** 2 / (2 * theta_sigma ** 2))
 
         responses = []
         sum_even = np.zeros((rows, cols))
@@ -323,7 +320,7 @@ def phase_congruency(
             sum_amplitude += amplitude
             max_amplitude = np.maximum(max_amplitude, amplitude)
 
-        total_energy = np.sqrt(sum_even**2 + sum_odd**2) + eps
+        total_energy = np.sqrt(sum_even ** 2 + sum_odd ** 2) + eps
         mean_even = sum_even / total_energy
         mean_odd = sum_odd / total_energy
         energy = np.zeros((rows, cols))
@@ -333,7 +330,8 @@ def phase_congruency(
 
         tau = np.median(sum_amplitude) / np.sqrt(np.log(4))
         total_tau = tau * (1 - (1 / mult) ** nscale) / (1 - 1 / mult)
-        threshold = total_tau * np.sqrt(np.pi / 2) + noise_k * total_tau * np.sqrt((4 - np.pi) / 2)
+        threshold = (total_tau * np.sqrt(np.pi / 2)
+                     + noise_k * total_tau * np.sqrt((4 - np.pi) / 2))
         energy = np.maximum(energy - threshold, 0)
 
         width = (sum_amplitude / (max_amplitude + eps) - 1) / (nscale - 1)
@@ -347,7 +345,7 @@ def phase_congruency(
     cov_xx /= norient / 2
     cov_yy /= norient / 2
     cov_xy = 4 * cov_xy / norient
-    spread_term = np.sqrt(cov_xy**2 + (cov_xx - cov_yy) ** 2) + eps
+    spread_term = np.sqrt(cov_xy ** 2 + (cov_xx - cov_yy) ** 2) + eps
     return (cov_yy + cov_xx + spread_term) / 2
 
 
@@ -370,12 +368,10 @@ def fsim_luma_maps(first_luma: np.ndarray, second_luma: np.ndarray) -> tuple:
     gradient_second = scharr_gm(second_luma)
 
     stabilizer_pc, stabilizer_gm = 0.85, 160.0
-    similarity_pc = (2 * congruency_first * congruency_second + stabilizer_pc) / (
-        congruency_first**2 + congruency_second**2 + stabilizer_pc
-    )
-    similarity_gm = (2 * gradient_first * gradient_second + stabilizer_gm) / (
-        gradient_first**2 + gradient_second**2 + stabilizer_gm
-    )
+    similarity_pc = ((2 * congruency_first * congruency_second + stabilizer_pc)
+                     / (congruency_first ** 2 + congruency_second ** 2 + stabilizer_pc))
+    similarity_gm = ((2 * gradient_first * gradient_second + stabilizer_gm)
+                     / (gradient_first ** 2 + gradient_second ** 2 + stabilizer_gm))
     return similarity_pc * similarity_gm, np.maximum(congruency_first, congruency_second)
 
 
@@ -505,7 +501,9 @@ def to_tensor(image_path: str):
     try:
         import torch
     except ImportError as error:
-        raise RuntimeError("Для нейросетевых метрик нужен torch: pip install pyiqa") from error
+        raise RuntimeError(
+            "Для нейросетевых метрик нужен torch: pip install pyiqa"
+        ) from error
     array = np.asarray(Image.open(image_path).convert("RGB"), dtype=np.float32) / 255.0
     return torch.from_numpy(array).permute(2, 0, 1).unsqueeze(0)
 
@@ -530,6 +528,8 @@ def iqa_metric(name: str):
         try:
             import pyiqa
         except ImportError as error:
-            raise RuntimeError(f"Для метрики {name} нужен пакет pyiqa: pip install pyiqa") from error
+            raise RuntimeError(
+                f"Для метрики {name} нужен пакет pyiqa: pip install pyiqa"
+            ) from error
         _IQA_CACHE[name] = pyiqa.create_metric(name)
     return _IQA_CACHE[name]

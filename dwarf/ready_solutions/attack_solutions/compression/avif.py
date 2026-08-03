@@ -12,7 +12,10 @@ class Avif(Ready_Compression_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {"input_data": None, "output_data": None}):
+    def attack(args: dict = {
+        "input_data": None,
+        "output_data": None
+    }):
         """
         Пережимает изображение кодеком AVIF и сохраняет результат.
 
@@ -37,11 +40,11 @@ class Avif(Ready_Compression_Attacks):
         except ImportError:
             try:
                 import pillow_heif
-
                 pillow_heif.register_avif_opener()
             except ImportError as error:
                 raise RuntimeError(
-                    "Для атаки Avif нужен pillow-avif-plugin или pillow-heif: pip install pillow-avif-plugin"
+                    "Для атаки Avif нужен pillow-avif-plugin или pillow-heif: "
+                    "pip install pillow-avif-plugin"
                 ) from error
 
         img = Image.open(input_data).convert("RGB")

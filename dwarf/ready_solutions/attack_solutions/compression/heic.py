@@ -12,7 +12,10 @@ class Heic(Ready_Compression_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {"input_data": None, "output_data": None}):
+    def attack(args: dict = {
+        "input_data": None,
+        "output_data": None
+    }):
         """
         Пережимает изображение кодеком HEIF и сохраняет результат.
 
@@ -35,7 +38,9 @@ class Heic(Ready_Compression_Attacks):
         try:
             import pillow_heif
         except ImportError as error:
-            raise RuntimeError("Для атаки Heic нужен пакет pillow-heif: pip install pillow-heif") from error
+            raise RuntimeError(
+                "Для атаки Heic нужен пакет pillow-heif: pip install pillow-heif"
+            ) from error
         pillow_heif.register_heif_opener()
 
         img = Image.open(input_data).convert("RGB")

@@ -1,12 +1,13 @@
+from pathlib import Path
+from typing import Iterator
+
 from dwarf.core.utils.utils import *
 
-
 class Ds_Core_Meta(abc.ABCMeta):
-    def __getattr__(cls, name: str):
+    def __getattr__(cls, name: str): 
         if name in cls._registered_dss:
             return cls._registered_dss[name]
         raise AttributeError(f"{cls.__name__} has no attribute {name}")
-
 
 class Ds_Core(abc.ABC, metaclass=Ds_Core_Meta):
     """
@@ -40,7 +41,10 @@ class Ds_Core(abc.ABC, metaclass=Ds_Core_Meta):
 
     @staticmethod
     @abc.abstractmethod
-    def ds(args: dict = {"original_bits": None, "extracted_bits": None}):
+    def ds(args: dict = {
+        "original_bits": None,
+        "extracted_bits": None
+    }): 
         pass
 
     def get_ds_class_by_name(ds_name: str):
@@ -51,12 +55,10 @@ class Ds_Core(abc.ABC, metaclass=Ds_Core_Meta):
         for ds_name in all_dss:
             Ds_Core.get_ds_class_by_name(ds_name).ds(dss[ds_name])
 
-
 class Ready_Datasets(Ds_Core):
     """
     Класс, содержащий в себе все готовые решения для работы с датасетами.
     """
-
 
 # # Форматы, которые ядро считает валидными носителями ЦВЗ.
 # SUPPORTED_EXTENSIONS: tuple = (".png", ".bmp", ".tiff", ".tif", ".ppm")

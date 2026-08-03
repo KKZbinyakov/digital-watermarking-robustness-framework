@@ -10,7 +10,10 @@ class FSIMc(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {"original_path": None, "distorted_path": None}):
+    def expertise(args: dict = {
+        "original_path": None,
+        "distorted_path": None
+    }):
         """
         Считает FSIMc между двумя изображениями.
 
@@ -41,8 +44,10 @@ class FSIMc(Ready_Imperceptibility_Expertise):
 
         stabilizer = 200.0
         chroma_exponent = 0.03
-        similarity_i = (2 * original_i * distorted_i + stabilizer) / (original_i**2 + distorted_i**2 + stabilizer)
-        similarity_q = (2 * original_q * distorted_q + stabilizer) / (original_q**2 + distorted_q**2 + stabilizer)
+        similarity_i = ((2 * original_i * distorted_i + stabilizer)
+                        / (original_i ** 2 + distorted_i ** 2 + stabilizer))
+        similarity_q = ((2 * original_q * distorted_q + stabilizer)
+                        / (original_q ** 2 + distorted_q ** 2 + stabilizer))
         chroma = similarity_i * similarity_q
         chroma = np.sign(chroma) * np.abs(chroma) ** chroma_exponent
 

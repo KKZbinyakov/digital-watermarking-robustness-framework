@@ -1,12 +1,10 @@
 from dwarf.core.utils.utils import *
 
-
 class Expertise_Core_Meta(abc.ABCMeta):
-    def __getattr__(cls, name: str):
+    def __getattr__(cls, name: str): 
         if name in cls._registered_expertises:
             return cls._registered_expertises[name]
         raise AttributeError(f"{cls.__name__} has no attribute {name}")
-
 
 class Expertise_Core(abc.ABC, metaclass=Expertise_Core_Meta):
     """
@@ -17,7 +15,7 @@ class Expertise_Core(abc.ABC, metaclass=Expertise_Core_Meta):
         Словарь, содержащий в себе все готовые решения для экспертизы.
 
     Methods:
-    __init_subclass__(cls, **kwargs)
+    __init_subclass__(cls, **kwargs) 
         Регистрирует экспертизу в словаре _registered_expertises.
     get_registered_expertises()
         Возвращает словарь _registered_expertises.
@@ -26,11 +24,10 @@ class Expertise_Core(abc.ABC, metaclass=Expertise_Core_Meta):
     expertise(args: dict = {
         "original_bits": None,
         "extracted_bits": None
-    }):
+    }): 
         Абстрактный метод экспертизы, который должен быть реализован в каждом подклассе.
 
     """
-
     _registered_expertises = {}
 
     def __init_subclass__(cls, **kwargs):
@@ -46,7 +43,10 @@ class Expertise_Core(abc.ABC, metaclass=Expertise_Core_Meta):
 
     @staticmethod
     @abc.abstractmethod
-    def expertise(args: dict = {"original_bits": None, "extracted_bits": None}):
+    def expertise(args: dict = {
+        "original_bits": None,
+        "extracted_bits": None
+    }): 
         pass
 
     def get_expertise_class_by_name(expertise_name: str):
@@ -57,13 +57,10 @@ class Expertise_Core(abc.ABC, metaclass=Expertise_Core_Meta):
         for expertise_name in all_expertises:
             Expertise_Core.get_expertise_class_by_name(expertise_name).expertise(expertises[expertise_name])
 
-
 class Ready_Robustness_Expertise(Expertise_Core):
     """
     Класс, содержащий в себе все готовые решения для экспертизы робастности.
     """
-
-
 class Ready_Imperceptibility_Expertise(Expertise_Core):
     """
     Класс, содержащий в себе все готовые решения для экспертизы невидимости.

@@ -7,7 +7,10 @@ class SSIM(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {"original_path": None, "distorted_path": None}):
+    def expertise(args: dict = {
+        "original_path": None,
+        "distorted_path": None
+    }):
         """
         Считает средний по кадру SSIM между двумя изображениями.
 

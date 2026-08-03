@@ -1,6 +1,5 @@
 from ...utils.attack_utils import *
 
-
 class Brightness_Contrast(Ready_Color_Brightness_Attacks):
     """
     Атака изменения яркости и контраста.
@@ -10,7 +9,10 @@ class Brightness_Contrast(Ready_Color_Brightness_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {"input_data": None, "output_data": None}):
+    def attack(args: dict = {
+        "input_data": None,
+        "output_data": None
+    }):
         """
         Меняет яркость и контраст изображения и сохраняет результат.
 

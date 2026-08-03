@@ -12,7 +12,10 @@ class Color_Jitter(Ready_Color_Brightness_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {"input_data": None, "output_data": None}):
+    def attack(args: dict = {
+        "input_data": None,
+        "output_data": None
+    }):
         """
         Применяет случайное цветовое дрожание и сохраняет результат.
 
@@ -38,7 +41,7 @@ class Color_Jitter(Ready_Color_Brightness_Attacks):
         contrast = float(args.get("contrast", 0.2))
         saturation = float(args.get("saturation", 0.2))
         hue = float(args.get("hue", 0.05))
-        seed = args.get("seed")
+        seed = args.get("seed", None)
 
         rng = np.random.default_rng(seed)
         img = Image.open(input_data).convert("RGB")

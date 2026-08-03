@@ -58,33 +58,11 @@ include = ["dwarf*"]
 Homepage = "https://github.com/KKZbinyakov/digital-watermarking-robustness-framework"
 # Documentation = "https://readthedocs.io"
 
-[tool.ruff]
-target-version = "py310"          # версия Python для совместимости
-line-length = 120                 # как в black (или 100/120 на ваш вкус)
-indent-width = 4
-
-[tool.ruff.format]
-quote-style = "double"            # двойные кавычки (как black)
-indent-style = "space"            # пробелы, не табы
-skip-magic-trailing-comma = false # уважать висячие запятые
-docstring-code-format = true      # форматировать код в docstrings
-
-[tool.ruff.lint]
-select = [
-    "E",   # pycodestyle (ошибки)
-    "W",   # pycodestyle (предупреждения)
-    "F",   # Pyflakes
-    "I",   # isort (сортировка импортов)
-    "N",   # pep8-naming
-    "UP",  # pyupgrade
-    "B",   # flake8-bugbear
-    "C4",  # flake8-comprehensions
-    "SIM", # flake8-simplify
-]
-ignore = ["E501"]  # длинные строки — форматтер сам разберётся
-
-[tool.ruff.lint.pydocstyle]
-convention = "google"
+# Настройки для инструментов разработки (например, Ruff, Black, Pytest)
+[tool.black]
+line-length = 88
+target-version = ['py39']
+extend-exclude = '\.pyx$'
 
 [tool.pytest.ini_options]
 minversion = "7.0"

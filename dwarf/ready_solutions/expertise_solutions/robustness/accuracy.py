@@ -7,7 +7,10 @@ class Accuracy(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {"y_true": None, "y_pred": None}):
+    def expertise(args: dict = {
+        "y_true": None,
+        "y_pred": None
+    }):
         """
         Считает долю совпадений предсказанных меток с истинными.
 
@@ -22,6 +25,8 @@ class Accuracy(Ready_Robustness_Expertise):
         Raises:
             ValueError: если формы меток не совпадают или массивы пусты
         """
-        true_positive, true_negative, false_positive, false_negative = confusion_counts(args["y_true"], args["y_pred"])
+        true_positive, true_negative, false_positive, false_negative = confusion_counts(
+            args["y_true"], args["y_pred"]
+        )
         total = true_positive + true_negative + false_positive + false_negative
         return float((true_positive + true_negative) / total)

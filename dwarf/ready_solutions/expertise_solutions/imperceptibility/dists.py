@@ -13,7 +13,10 @@ class DISTS(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {"original_path": None, "distorted_path": None}):
+    def expertise(args: dict = {
+        "original_path": None,
+        "distorted_path": None
+    }):
         """
         Считает DISTS между двумя изображениями.
 
@@ -29,4 +32,5 @@ class DISTS(Ready_Imperceptibility_Expertise):
             RuntimeError: если пакет pyiqa не установлен
         """
         metric = iqa_metric("dists")
-        return float(metric(to_tensor(args["distorted_path"]), to_tensor(args["original_path"])).item())
+        return float(metric(to_tensor(args["distorted_path"]),
+                            to_tensor(args["original_path"])).item())

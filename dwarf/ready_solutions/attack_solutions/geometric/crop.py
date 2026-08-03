@@ -83,12 +83,18 @@ def _fill_color(fill) -> np.ndarray:
         try:
             levels = tuple(fill)
         except TypeError as error:
-            raise ValueError(f"fill должен быть уровнем 0..255 или тройкой RGB, получено {fill!r}") from error
+            raise ValueError(
+                f"fill должен быть уровнем 0..255 или тройкой RGB, получено {fill!r}"
+            ) from error
 
     if len(levels) != 3:
-        raise ValueError(f"fill должен быть уровнем 0..255 или тройкой RGB, получено {fill!r}")
+        raise ValueError(
+            f"fill должен быть уровнем 0..255 или тройкой RGB, получено {fill!r}"
+        )
     if any(not 0 <= level <= 255 for level in levels):
-        raise ValueError(f"уровни fill должны быть в диапазоне 0..255, получено {fill!r}")
+        raise ValueError(
+            f"уровни fill должны быть в диапазоне 0..255, получено {fill!r}"
+        )
 
     return np.round(levels).astype(np.uint8)
 
@@ -113,7 +119,7 @@ class Crop(Ready_Geometric_Attacks):
             "fill": 0,
             "resample": "bicubic",
             "seed": None,
-        },
+        }
     ):
         """
         Кадрирует изображение и сохраняет результат.
@@ -142,22 +148,31 @@ class Crop(Ready_Geometric_Attacks):
             ValueError: если ratio вне диапазона (0, 1] либо position, mode, resample
                 или fill недопустимы
         """
-        input_image = args["input_image"]
+        input_data = args["input_data"]
+        output_data = args["output_data"]
         ratio = float(args.get("ratio", 0.5))
         position = args.get("position", "center")
         mode = args.get("mode", "pad")
         resample = args.get("resample", "bicubic")
         fill = args.get("fill", 0)
-        seed = args.get("seed")
+        seed = args.get("seed", None)
 
         if not 0 < ratio <= 1:
             raise ValueError(f"ratio должен быть в диапазоне (0, 1], получено {ratio}")
         if position not in _ANCHORS:
-            raise ValueError(f"Неизвестный position={position!r}, ожидается один из {', '.join(sorted(_ANCHORS))}")
+            raise ValueError(
+                f"Неизвестный position={position!r}, ожидается один из "
+                f"{', '.join(sorted(_ANCHORS))}"
+            )
         if mode not in _MODES:
-            raise ValueError(f"Неизвестный mode={mode!r}, ожидается один из {', '.join(_MODES)}")
+            raise ValueError(
+                f"Неизвестный mode={mode!r}, ожидается один из {', '.join(_MODES)}"
+            )
         if mode == "resize" and resample not in _RESAMPLING:
-            raise ValueError(f"Неизвестный resample={resample!r}, ожидается один из {', '.join(sorted(_RESAMPLING))}")
+            raise ValueError(
+                f"Неизвестный resample={resample!r}, ожидается один из "
+                f"{', '.join(sorted(_RESAMPLING))}"
+            )
         color = _fill_color(fill)
 
         array = load_rgb(input_data)
@@ -170,7 +185,9 @@ class Crop(Ready_Geometric_Attacks):
         top = _origin(anchor_y, height, kept_height, rng)
         left = _origin(anchor_x, width, kept_width, rng)
 
-        region = np.ascontiguousarray(array[top : top + kept_height, left : left + kept_width])
+        region = np.ascontiguousarray(
+            array[top : top + kept_height, left : left + kept_width]
+        )
 
         if mode == "raw":
             return region

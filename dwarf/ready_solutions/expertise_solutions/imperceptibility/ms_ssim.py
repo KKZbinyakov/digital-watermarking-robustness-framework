@@ -11,7 +11,10 @@ class MS_SSIM(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {"original_path": None, "distorted_path": None}):
+    def expertise(args: dict = {
+        "original_path": None,
+        "distorted_path": None
+    }):
         """
         Считает MS-SSIM между двумя изображениями.
 
@@ -34,7 +37,8 @@ class MS_SSIM(Ready_Imperceptibility_Expertise):
         minimum_side = 2 ** (scales - 1) * window.shape[0]
         if min(original.shape) < minimum_side:
             raise ValueError(
-                f"для MS-SSIM нужен кадр не меньше {minimum_side} пикселей по каждой стороне, получено {original.shape}"
+                f"для MS-SSIM нужен кадр не меньше {minimum_side} пикселей по каждой "
+                f"стороне, получено {original.shape}"
             )
 
         weights = np.array([0.0448, 0.2856, 0.3001, 0.2363, 0.1333])

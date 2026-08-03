@@ -11,7 +11,10 @@ class Flif(Ready_Compression_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {"input_data": None, "output_data": None}):
+    def attack(args: dict = {
+        "input_data": None,
+        "output_data": None
+    }):
         """
         Перекодирует изображение через FLIF и сохраняет результат.
 

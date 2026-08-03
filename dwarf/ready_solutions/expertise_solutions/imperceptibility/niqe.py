@@ -15,7 +15,9 @@ class NIQE(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {"image_path": None}):
+    def expertise(args: dict = {
+        "image_path": None
+    }):
         """
         Считает NIQE для одного изображения.
 

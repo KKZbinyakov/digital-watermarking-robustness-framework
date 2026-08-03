@@ -9,28 +9,20 @@
 зафиксированы эталонные значения, полученные после сверки VIF с исходным
 vifvec
 """
-
 import inspect
 
 import numpy as np
 import pytest
 from PIL import Image, ImageFilter
 
+import dwarf
+import dwarf.ready_solutions.expertise_solutions
 from dwarf import Expertise_Core
 
-FULL_REFERENCE = frozenset(
-    {
-        "MSE",
-        "PSNR",
-        "SSIM",
-        "MS_SSIM",
-        "VIF",
-        "FSIM",
-        "FSIMc",
-        "LPIPS",
-        "DISTS",
-    }
-)
+
+FULL_REFERENCE = frozenset({
+    "MSE", "PSNR", "SSIM", "MS_SSIM", "VIF", "FSIM", "FSIMc", "LPIPS", "DISTS",
+})
 """Метрики, сравнивающие изображение с оригиналом."""
 
 NO_REFERENCE = frozenset({"NIQE", "BRISQUE"})
@@ -50,9 +42,12 @@ MINIMUM_SIDE = {"SSIM": 11, "MS_SSIM": 176, "VIF": 72}
 
 GOLDEN = {
     "identity": {"VIF": 0.9999999999999978, "FSIM": 1.0, "FSIMc": 1.0},
-    "noise": {"VIF": 0.6230617910677038, "FSIM": 0.9603402010526968, "FSIMc": 0.9537927462695296},
-    "blur": {"VIF": 0.25013374727949195, "FSIM": 0.7535262819245329, "FSIMc": 0.7513410066027992},
-    "jpeg": {"VIF": 0.2827797038815233, "FSIM": 0.9676943224352389, "FSIMc": 0.9642463431969664},
+    "noise": {"VIF": 0.6230617910677038, "FSIM": 0.9603402010526968,
+              "FSIMc": 0.9537927462695296},
+    "blur": {"VIF": 0.25013374727949195, "FSIM": 0.7535262819245329,
+             "FSIMc": 0.7513410066027992},
+    "jpeg": {"VIF": 0.2827797038815233, "FSIM": 0.9676943224352389,
+             "FSIMc": 0.9642463431969664},
 }
 """Зафиксированные значения метрик без внешнего эталона на reference_image."""
 
@@ -77,7 +72,9 @@ def _discover():
         dict: отображение имени метрики в её класс
     """
     return {
-        name: cls for name, cls in Expertise_Core.get_registered_expertises().items() if not inspect.isabstract(cls)
+        name: cls
+        for name, cls in Expertise_Core.get_registered_expertises().items()
+        if not inspect.isabstract(cls)
     }
 
 
@@ -101,7 +98,8 @@ def require(name):
     """
     if name not in METRICS:
         pytest.skip(
-            f"метрика {name} отсутствует в реестре: соберите расширения командой python setup.py build_ext --inplace"
+            f"метрика {name} отсутствует в реестре: соберите расширения командой "
+            f"python setup.py build_ext --inplace"
         )
     return METRICS[name]
 
@@ -125,15 +123,13 @@ def reference_image(height=288, width=288, seed=20240501):
     """
     rng = np.random.default_rng(seed)
     rows, cols = np.mgrid[0:height, 0:width].astype(float)
-    base = (
-        0.5
-        + 0.22 * np.sin(2 * np.pi * cols / width)
-        + 0.14 * np.cos(2 * np.pi * rows / height)
-        + 0.10 * np.sin(6 * np.pi * (rows + cols) / (height + width))
-    )
+    base = (0.5
+            + 0.22 * np.sin(2 * np.pi * cols / width)
+            + 0.14 * np.cos(2 * np.pi * rows / height)
+            + 0.10 * np.sin(6 * np.pi * (rows + cols) / (height + width)))
     array = np.stack([base * 205 + 25, base * 185 + 35, base * 165 + 45], axis=-1)
-    array[height // 5 : height // 2, width // 5 : width // 2] *= 0.6
-    array[3 * height // 5 :, 3 * width // 5 :] *= 1.4
+    array[height // 5:height // 2, width // 5:width // 2] *= 0.6
+    array[3 * height // 5:, 3 * width // 5:] *= 1.4
     array += rng.normal(0, 5, array.shape)
     return np.clip(array, 0, 255).astype(np.uint8)
 
@@ -166,7 +162,6 @@ def distorted(tmp_path, original):
     Returns:
         callable: функция (вид искажения) -> путь к искажённой копии
     """
-
     def build(kind):
         base = np.asarray(Image.open(original).convert("RGB"))
         path = tmp_path / f"distorted_{kind}.png"
@@ -265,7 +260,8 @@ def arguments(original, distorted, watermarks, detector):
         if name == "P_Value":
             return {"statistic": 0.7, "null_samples": scores}
         if name == "Watermark_PSNR":
-            return {"original_watermark_path": watermarks[0], "extracted_watermark_path": watermarks[1]}
+            return {"original_watermark_path": watermarks[0],
+                    "extracted_watermark_path": watermarks[1]}
         raise KeyError(f"неизвестная метрика {name}: добавьте её в фабрику параметров")
 
     return build
@@ -371,19 +367,10 @@ def test_deterministic(name, arguments):
     second = evaluate(name, arguments)
     assert first == second or (np.isnan(first) and np.isnan(second))
 
-
-@pytest.mark.parametrize(
-    "name, expected",
-    [
-        ("MSE", 0.0),
-        ("PSNR", float("inf")),
-        ("SSIM", 1.0),
-        ("MS_SSIM", 1.0),
-        ("VIF", 1.0),
-        ("FSIM", 1.0),
-        ("FSIMc", 1.0),
-    ],
-)
+@pytest.mark.parametrize("name, expected", [
+    ("MSE", 0.0), ("PSNR", float("inf")), ("SSIM", 1.0),
+    ("MS_SSIM", 1.0), ("VIF", 1.0), ("FSIM", 1.0), ("FSIMc", 1.0),
+])
 def test_identical_images_reach_limit(name, expected, arguments):
     """
     Проверяет предельное значение метрики на паре одинаковых изображений.
@@ -471,12 +458,12 @@ def test_monotone_in_distortion(name, family, arguments):
     severe = evaluate(name, arguments, f"{family}_severe")
     if name in LOWER_IS_BETTER:
         assert severe > mild, (
-            f"{name} на {family}: сильное искажение дало не большее значение ({severe:.6f} против {mild:.6f})"
-        )
+            f"{name} на {family}: сильное искажение дало не большее значение "
+            f"({severe:.6f} против {mild:.6f})")
     else:
         assert severe < mild, (
-            f"{name} на {family}: сильное искажение дало не меньшее значение ({severe:.6f} против {mild:.6f})"
-        )
+            f"{name} на {family}: сильное искажение дало не меньшее значение "
+            f"({severe:.6f} против {mild:.6f})")
 
 
 def test_auc_of_random_scores_is_near_half(detector):
@@ -529,7 +516,6 @@ def test_p_value_never_reaches_zero(detector):
     value = metric.expertise({"statistic": 1e9, "null_samples": samples})
     assert value == pytest.approx(1 / (samples.shape[0] + 1))
 
-
 @pytest.mark.parametrize("side", [16, 40, 80, 200])
 @pytest.mark.parametrize("name", sorted(FULL_REFERENCE - {"LPIPS", "DISTS"}))
 def test_small_frames(name, side, tmp_path):
@@ -555,7 +541,8 @@ def test_small_frames(name, side, tmp_path):
     Image.fromarray(np.roll(array, 1, axis=1), "RGB").save(second)
 
     try:
-        value = METRICS[name].expertise({"original_path": str(first), "distorted_path": str(second)})
+        value = METRICS[name].expertise({"original_path": str(first),
+                                         "distorted_path": str(second)})
     except ValueError:
         assert side < MINIMUM_SIDE.get(name, 0) + 1 or name in MINIMUM_SIDE
         return
@@ -611,24 +598,22 @@ def test_accepts_path_objects(name, tmp_path, original, distorted):
     from pathlib import Path
 
     require(name)
-    METRICS[name].expertise({"original_path": Path(original), "distorted_path": Path(distorted("noise"))})
+    METRICS[name].expertise({"original_path": Path(original),
+                             "distorted_path": Path(distorted("noise"))})
 
 
-@pytest.mark.parametrize(
-    "name, params",
-    [
-        ("BER", {"original_bits": "1010", "extracted_bits": "10"}),
-        ("BER", {"original_bits": "", "extracted_bits": ""}),
-        ("NC", {"original_bits": "1010", "extracted_bits": "10"}),
-        ("NC", {"original_bits": "", "extracted_bits": ""}),
-        ("Accuracy", {"y_true": [1, 0, 1], "y_pred": [1, 0]}),
-        ("Precision", {"y_true": [1, 0, 1], "y_pred": [1, 0]}),
-        ("Recall", {"y_true": [1, 0, 1], "y_pred": [1, 0]}),
-        ("F1", {"y_true": [1, 0, 1], "y_pred": [1, 0]}),
-        ("AUC", {"y_true": [1, 0, 1], "y_scores": [0.1, 0.2]}),
-        ("Accuracy", {"y_true": [], "y_pred": []}),
-    ],
-)
+@pytest.mark.parametrize("name, params", [
+    ("BER", {"original_bits": "1010", "extracted_bits": "10"}),
+    ("BER", {"original_bits": "", "extracted_bits": ""}),
+    ("NC", {"original_bits": "1010", "extracted_bits": "10"}),
+    ("NC", {"original_bits": "", "extracted_bits": ""}),
+    ("Accuracy", {"y_true": [1, 0, 1], "y_pred": [1, 0]}),
+    ("Precision", {"y_true": [1, 0, 1], "y_pred": [1, 0]}),
+    ("Recall", {"y_true": [1, 0, 1], "y_pred": [1, 0]}),
+    ("F1", {"y_true": [1, 0, 1], "y_pred": [1, 0]}),
+    ("AUC", {"y_true": [1, 0, 1], "y_scores": [0.1, 0.2]}),
+    ("Accuracy", {"y_true": [], "y_pred": []}),
+])
 def test_invalid_arguments_raise_value_error(name, params):
     """
     Проверяет, что недопустимые аргументы дают ValueError с внятным текстом.
@@ -648,14 +633,11 @@ def test_invalid_arguments_raise_value_error(name, params):
         metric.expertise(params)
 
 
-@pytest.mark.parametrize(
-    "name, params",
-    [
-        ("VIF", {"sigma_nsq": 0}),
-        ("VIF", {"sigma_nsq": -1}),
-        ("VIF", {"block_size": 0}),
-    ],
-)
+@pytest.mark.parametrize("name, params", [
+    ("VIF", {"sigma_nsq": 0}),
+    ("VIF", {"sigma_nsq": -1}),
+    ("VIF", {"block_size": 0}),
+])
 def test_invalid_image_parameters_raise_value_error(name, params, original, distorted):
     """
     Проверяет валидацию числовых параметров метрик по изображениям.
@@ -671,7 +653,8 @@ def test_invalid_image_parameters_raise_value_error(name, params, original, dist
     """
     metric = require(name)
     with pytest.raises(ValueError):
-        metric.expertise({"original_path": original, "distorted_path": distorted("noise"), **params})
+        metric.expertise({"original_path": original,
+                          "distorted_path": distorted("noise"), **params})
 
 
 def test_mismatched_image_sizes_raise_value_error(tmp_path, original):
@@ -703,7 +686,8 @@ def test_length_mismatch_is_allowed_explicitly():
         None
     """
     metric = require("BER")
-    value = metric.expertise({"original_bits": "1010", "extracted_bits": "10", "allow_length_mismatch": True})
+    value = metric.expertise({"original_bits": "1010", "extracted_bits": "10",
+                              "allow_length_mismatch": True})
     assert value == 0.0
 
 
@@ -727,11 +711,11 @@ def test_mse_and_psnr_match_skimage(kind, original, distorted):
     second = np.asarray(Image.open(path).convert("RGB"), dtype=np.float64)
     pair = {"original_path": original, "distorted_path": path}
 
-    assert require("MSE").expertise(pair) == pytest.approx(metrics.mean_squared_error(first, second), rel=1e-12)
+    assert require("MSE").expertise(pair) == pytest.approx(
+        metrics.mean_squared_error(first, second), rel=1e-12)
     if kind != "identity":
         assert require("PSNR").expertise(pair) == pytest.approx(
-            metrics.peak_signal_noise_ratio(first, second, data_range=255), rel=1e-12
-        )
+            metrics.peak_signal_noise_ratio(first, second, data_range=255), rel=1e-12)
 
 
 @pytest.mark.parametrize("kind", ["identity", "noise", "blur", "jpeg"])
@@ -758,8 +742,8 @@ def test_ssim_matches_skimage(kind, original, distorted):
     second = np.asarray(Image.open(path).convert("L"), dtype=np.float64)
 
     expected = metrics.structural_similarity(
-        first, second, data_range=255, gaussian_weights=True, sigma=1.5, use_sample_covariance=False
-    )
+        first, second, data_range=255, gaussian_weights=True,
+        sigma=1.5, use_sample_covariance=False)
     ours = require("SSIM").expertise({"original_path": original, "distorted_path": path})
     assert ours == pytest.approx(expected, abs=1e-10)
 
@@ -791,15 +775,10 @@ def test_ms_ssim_matches_sewar(kind, original, distorted):
     assert ours == pytest.approx(expected, abs=1e-10)
 
 
-@pytest.mark.parametrize(
-    "name, reference_name",
-    [
-        ("Accuracy", "accuracy_score"),
-        ("Precision", "precision_score"),
-        ("Recall", "recall_score"),
-        ("F1", "f1_score"),
-    ],
-)
+@pytest.mark.parametrize("name, reference_name", [
+    ("Accuracy", "accuracy_score"), ("Precision", "precision_score"),
+    ("Recall", "recall_score"), ("F1", "f1_score"),
+])
 def test_detector_metrics_match_sklearn(name, reference_name, detector):
     """
     Сверяет метрики бинарного детектора с реализациями scikit-learn.
@@ -816,11 +795,8 @@ def test_detector_metrics_match_sklearn(name, reference_name, detector):
 
     truth, predicted, _ = detector
     reference = getattr(sklearn_metrics, reference_name)
-    expected = (
-        reference(truth, predicted)
-        if reference_name == "accuracy_score"
+    expected = reference(truth, predicted) if reference_name == "accuracy_score" \
         else reference(truth, predicted, zero_division=0)
-    )
     ours = require(name).expertise({"y_true": truth, "y_pred": predicted})
     assert ours == pytest.approx(expected, abs=1e-12)
 
@@ -843,13 +819,11 @@ def test_auc_matches_sklearn(detector):
     truth, _, scores = detector
     metric = require("AUC")
     assert metric.expertise({"y_true": truth, "y_scores": scores}) == pytest.approx(
-        sklearn_metrics.roc_auc_score(truth, scores), abs=1e-12
-    )
+        sklearn_metrics.roc_auc_score(truth, scores), abs=1e-12)
 
     tied = np.round(scores, 1)
     assert metric.expertise({"y_true": truth, "y_scores": tied}) == pytest.approx(
-        sklearn_metrics.roc_auc_score(truth, tied), abs=1e-12
-    )
+        sklearn_metrics.roc_auc_score(truth, tied), abs=1e-12)
 
 
 @pytest.mark.parametrize("kind", ["identity", "noise", "blur", "jpeg"])

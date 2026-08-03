@@ -9,7 +9,10 @@ class Grayscale(Ready_Color_Brightness_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {"input_data": None, "output_data": None}):
+    def attack(args: dict = {
+        "input_data": None,
+        "output_data": None
+    }):
         """
         Обесцвечивает изображение и сохраняет результат.
 

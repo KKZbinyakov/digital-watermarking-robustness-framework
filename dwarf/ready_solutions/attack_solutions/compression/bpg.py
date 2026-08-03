@@ -10,7 +10,10 @@ class Bpg(Ready_Compression_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {"input_data": None, "output_data": None}):
+    def attack(args: dict = {
+        "input_data": None,
+        "output_data": None
+    }):
         """
         Пережимает изображение кодеком BPG и сохраняет результат.
 
@@ -32,7 +35,8 @@ class Bpg(Ready_Compression_Attacks):
 
         if shutil.which("bpgenc") is None or shutil.which("bpgdec") is None:
             raise RuntimeError(
-                "Для атаки Bpg нужны утилиты bpgenc и bpgdec из libbpg в PATH.Через pip формат BPG недоступен."
+                "Для атаки Bpg нужны утилиты bpgenc и bpgdec из libbpg в PATH."
+                "Через pip формат BPG недоступен."
             )
 
         img = Image.open(input_data).convert("RGB")
