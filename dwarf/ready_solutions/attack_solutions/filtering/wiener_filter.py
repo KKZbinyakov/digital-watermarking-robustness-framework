@@ -1,4 +1,5 @@
 from ...utils.attack_utils import *
+from scipy.signal import wiener
 
 class Wiener_Filter(Ready_Filtering_Attacks):
     """

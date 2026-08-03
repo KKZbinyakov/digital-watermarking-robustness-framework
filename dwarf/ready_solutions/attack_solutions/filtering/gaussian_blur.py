@@ -1,4 +1,5 @@
 from ...utils.attack_utils import *
+from PIL import ImageFilter
 
 class Gaussian_Blur(Ready_Filtering_Attacks):
     """

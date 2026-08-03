@@ -1,4 +1,5 @@
 from ...utils.attack_utils import *
+import cv2
 
 class Bilateral_Filter(Ready_Filtering_Attacks):
     """

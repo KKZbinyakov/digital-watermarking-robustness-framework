@@ -1,4 +1,5 @@
 from ...utils.attack_utils import *
+from PIL import ImageFilter
 
 class Unsharp_Mask(Ready_Filtering_Attacks):
     """

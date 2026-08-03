@@ -1,4 +1,5 @@
 from ...utils.attack_utils import *
+from PIL import ImageFilter
 
 class Median_Filter(Ready_Filtering_Attacks):
     """
