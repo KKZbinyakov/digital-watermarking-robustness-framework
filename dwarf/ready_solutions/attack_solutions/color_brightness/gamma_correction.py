@@ -1,4 +1,7 @@
-from ...utils.attack_utils import *
+import numpy as np
+
+from dwarf.core.attack_orchestrator.attack_core import Ready_Color_Brightness_Attacks
+from dwarf.ready_solutions.utils.attack_utils import load_rgb, save_rgb
 
 
 class Gamma_Correction(Ready_Color_Brightness_Attacks):
@@ -10,10 +13,7 @@ class Gamma_Correction(Ready_Color_Brightness_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
         Применяет гамма-коррекцию к изображению и сохраняет результат.
 
@@ -32,6 +32,8 @@ class Gamma_Correction(Ready_Color_Brightness_Attacks):
         Raises:
             ValueError: если gamma не положительна
         """
+        defaults = {"input_data": None, "gamma": 1.5}
+        args = {**defaults, **args}
         input_data = args["input_data"]
         output_data = args["output_data"]
         gamma = float(args.get("gamma", 1.5))

@@ -1,4 +1,6 @@
-from ...utils.attack_utils import *
+from PIL import Image
+
+from dwarf.core.attack_orchestrator.attack_core import Ready_Color_Brightness_Attacks
 
 
 class Grayscale(Ready_Color_Brightness_Attacks):
@@ -9,10 +11,7 @@ class Grayscale(Ready_Color_Brightness_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
         Обесцвечивает изображение и сохраняет результат.
 
@@ -24,6 +23,8 @@ class Grayscale(Ready_Color_Brightness_Attacks):
         Returns:
             None
         """
+        defaults = {"input_data": None}
+        args = {**defaults, **args}
         input_data = args["input_data"]
         output_data = args["output_data"]
 

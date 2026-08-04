@@ -1,4 +1,7 @@
-from ...utils.attack_utils import *
+from PIL import Image
+
+from dwarf.core.attack_orchestrator.attack_core import Ready_Compression_Attacks
+from dwarf.ready_solutions.utils.attack_utils import roundtrip_buffer
 
 
 class Jpeg2000(Ready_Compression_Attacks):
@@ -7,10 +10,7 @@ class Jpeg2000(Ready_Compression_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
         Пережимает изображение кодеком JPEG2000 и сохраняет результат.
 
@@ -23,6 +23,8 @@ class Jpeg2000(Ready_Compression_Attacks):
         Returns:
             None
         """
+        defaults = {"input_data": None, "compression_ratio": 20}
+        args = {**defaults, **args}
         input_data = args["input_data"]
         output_data = args["output_data"]
         compression_ratio = float(args.get("compression_ratio", 20))

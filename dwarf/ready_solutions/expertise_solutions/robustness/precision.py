@@ -1,4 +1,5 @@
-from ...utils.expertise_utils import *
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import confusion_counts
 
 
 class Precision(Ready_Robustness_Expertise):
@@ -10,10 +11,7 @@ class Precision(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "y_true": None,
-        "y_pred": None
-    }):
+    def expertise(**args):
         """
         Считает точность бинарного детектора.
 
@@ -31,6 +29,8 @@ class Precision(Ready_Robustness_Expertise):
         Raises:
             ValueError: если формы меток не совпадают или массивы пусты
         """
+        defaults = {"y_true": None, "y_pred": None}
+        args = {**defaults, **args}
         true_positive, _, false_positive, _ = confusion_counts(args["y_true"], args["y_pred"])
         detected = true_positive + false_positive
         return float(true_positive / detected) if detected else 0.0

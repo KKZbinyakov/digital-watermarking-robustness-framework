@@ -1,12 +1,13 @@
-from dwarf.core.utils.utils import *
+from abc import ABC, ABCMeta, abstractmethod
 
-class Expertise_Core_Meta(abc.ABCMeta):
-    def __getattr__(cls, name: str): 
+
+class Expertise_Core_Meta(ABCMeta):
+    def __getattr__(cls, name: str):
         if name in cls._registered_expertises:
             return cls._registered_expertises[name]
         raise AttributeError(f"{cls.__name__} has no attribute {name}")
 
-class Expertise_Core(abc.ABC, metaclass=Expertise_Core_Meta):
+class Expertise_Core(ABC, metaclass=Expertise_Core_Meta):
     """
     Класс, содержащий в себе все готовые решения для экспертизы.
 
@@ -15,7 +16,7 @@ class Expertise_Core(abc.ABC, metaclass=Expertise_Core_Meta):
         Словарь, содержащий в себе все готовые решения для экспертизы.
 
     Methods:
-    __init_subclass__(cls, **kwargs) 
+    __init_subclass__(cls, **kwargs)
         Регистрирует экспертизу в словаре _registered_expertises.
     get_registered_expertises()
         Возвращает словарь _registered_expertises.
@@ -24,7 +25,7 @@ class Expertise_Core(abc.ABC, metaclass=Expertise_Core_Meta):
     expertise(args: dict = {
         "original_bits": None,
         "extracted_bits": None
-    }): 
+    }):
         Абстрактный метод экспертизы, который должен быть реализован в каждом подклассе.
 
     """
@@ -42,11 +43,8 @@ class Expertise_Core(abc.ABC, metaclass=Expertise_Core_Meta):
         return cls.__subclasses__()
 
     @staticmethod
-    @abc.abstractmethod
-    def expertise(args: dict = {
-        "original_bits": None,
-        "extracted_bits": None
-    }): 
+    @abstractmethod
+    def expertise(**args):
         pass
 
     def get_expertise_class_by_name(expertise_name: str):
@@ -55,7 +53,7 @@ class Expertise_Core(abc.ABC, metaclass=Expertise_Core_Meta):
     def use_expertises(expertises: dict):
         all_expertises = expertises.keys()
         for expertise_name in all_expertises:
-            Expertise_Core.get_expertise_class_by_name(expertise_name).expertise(expertises[expertise_name])
+            Expertise_Core.get_expertise_class_by_name(expertise_name).expertise(**expertises[expertise_name])
 
 class Ready_Robustness_Expertise(Expertise_Core):
     """

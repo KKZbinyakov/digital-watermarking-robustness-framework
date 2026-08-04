@@ -1,4 +1,7 @@
-from ...utils.attack_utils import *
+from PIL import Image
+
+from dwarf.core.attack_orchestrator.attack_core import Ready_Compression_Attacks
+from dwarf.ready_solutions.utils.attack_utils import roundtrip_buffer
 
 
 class Avif(Ready_Compression_Attacks):
@@ -12,10 +15,7 @@ class Avif(Ready_Compression_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
         Пережимает изображение кодеком AVIF и сохраняет результат.
 
@@ -31,15 +31,17 @@ class Avif(Ready_Compression_Attacks):
         Raises:
             RuntimeError: если не установлен ни pillow-avif-plugin, ни pillow-heif
         """
+        defaults = {"input_data": None, "quality": 50}
+        args = {**defaults, **args}
         input_data = args["input_data"]
         output_data = args["output_data"]
         quality = int(args.get("quality", 50))
 
         try:
-            import pillow_avif
+            import pillow_avif  # noqa: F401
         except ImportError:
             try:
-                import pillow_heif
+                import pillow_heif  # noqa: F401
                 pillow_heif.register_avif_opener()
             except ImportError as error:
                 raise RuntimeError(

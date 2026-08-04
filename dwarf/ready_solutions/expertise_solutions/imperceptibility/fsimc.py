@@ -1,4 +1,7 @@
-from ...utils.expertise_utils import *
+import numpy as np
+
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Imperceptibility_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import downsample, fsim_luma_maps, load_rgb_float, rgb_to_yiq
 
 
 class FSIMc(Ready_Imperceptibility_Expertise):
@@ -10,10 +13,7 @@ class FSIMc(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "original_path": None,
-        "distorted_path": None
-    }):
+    def expertise(**args):
         """
         Считает FSIMc между двумя изображениями.
 
@@ -29,6 +29,8 @@ class FSIMc(Ready_Imperceptibility_Expertise):
         Returns:
             float: значение FSIMc, единица при полном совпадении
         """
+        defaults = {} # Написать дефолтные значения
+        args = {**defaults, **args}
         original_luma, original_i, original_q = rgb_to_yiq(load_rgb_float(args["original_path"]))
         distorted_luma, distorted_i, distorted_q = rgb_to_yiq(load_rgb_float(args["distorted_path"]))
 

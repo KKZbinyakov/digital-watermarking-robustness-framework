@@ -1,4 +1,7 @@
-from ...utils.expertise_utils import *
+import numpy as np
+
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import load_gray
 
 
 class Watermark_PSNR(Ready_Robustness_Expertise):
@@ -10,10 +13,7 @@ class Watermark_PSNR(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "original_watermark_path": None,
-        "extracted_watermark_path": None
-    }):
+    def expertise(**args):
         """
         Считает PSNR между двумя изображениями-знаками по каналу яркости.
 
@@ -27,6 +27,8 @@ class Watermark_PSNR(Ready_Robustness_Expertise):
         Returns:
             float: PSNR в децибелах, inf при полном совпадении
         """
+        defaults = {} # Написать дефолтные значения
+        args = {**defaults, **args}
         original = load_gray(args["original_watermark_path"])
         extracted = load_gray(args["extracted_watermark_path"])
 

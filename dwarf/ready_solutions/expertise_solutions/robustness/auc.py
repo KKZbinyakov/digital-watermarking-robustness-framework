@@ -1,4 +1,7 @@
-from ...utils.expertise_utils import *
+import numpy as np
+
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import avg_ranks
 
 
 class AUC(Ready_Robustness_Expertise):
@@ -7,10 +10,7 @@ class AUC(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "y_true": None,
-        "y_scores": None
-    }):
+    def expertise(**args):
         """
         Считает AUC через статистику Манна-Уитни.
 
@@ -28,6 +28,8 @@ class AUC(Ready_Robustness_Expertise):
         Raises:
             ValueError: если длины меток и оценок не совпадают
         """
+        defaults = {"y_true": None, "y_scores": None}
+        args = {**defaults, **args}
         y_true = np.asarray(args["y_true"])
         y_scores = np.asarray(args["y_scores"], dtype=float)
         if y_true.shape != y_scores.shape:

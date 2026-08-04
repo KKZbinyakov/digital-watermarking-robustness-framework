@@ -1,4 +1,7 @@
-from ...utils.expertise_utils import *
+import numpy as np
+
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Imperceptibility_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import load_rgb_float
 
 
 class MSE(Ready_Imperceptibility_Expertise):
@@ -7,10 +10,7 @@ class MSE(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "original_path": None,
-        "distorted_path": None
-    }):
+    def expertise(**args):
         """
         Считает среднеквадратичную ошибку между двумя изображениями.
 
@@ -22,6 +22,8 @@ class MSE(Ready_Imperceptibility_Expertise):
         Returns:
             float: значение MSE, не меньше нуля
         """
+        defaults = {} # Написать дефолтные значения
+        args = {**defaults, **args}
         original = load_rgb_float(args["original_path"])
         distorted = load_rgb_float(args["distorted_path"])
         return float(np.mean((original - distorted) ** 2))

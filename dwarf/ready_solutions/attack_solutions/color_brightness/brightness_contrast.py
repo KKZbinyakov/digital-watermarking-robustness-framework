@@ -1,4 +1,7 @@
-from ...utils.attack_utils import *
+from PIL import Image, ImageEnhance
+
+from dwarf.core.attack_orchestrator.attack_core import Ready_Color_Brightness_Attacks
+
 
 class Brightness_Contrast(Ready_Color_Brightness_Attacks):
     """
@@ -9,10 +12,7 @@ class Brightness_Contrast(Ready_Color_Brightness_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
         Меняет яркость и контраст изображения и сохраняет результат.
 
@@ -26,6 +26,8 @@ class Brightness_Contrast(Ready_Color_Brightness_Attacks):
         Returns:
             None
         """
+        defaults = {"input_data": None, "brightness": 1.2, "contrast": 1.2}
+        args = {**defaults, **args}
         input_data = args["input_data"]
         output_data = args["output_data"]
         brightness = float(args.get("brightness", 1.2))

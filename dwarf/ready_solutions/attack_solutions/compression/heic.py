@@ -1,4 +1,7 @@
-from ...utils.attack_utils import *
+from PIL import Image
+
+from dwarf.core.attack_orchestrator.attack_core import Ready_Compression_Attacks
+from dwarf.ready_solutions.utils.attack_utils import roundtrip_buffer
 
 
 class Heic(Ready_Compression_Attacks):
@@ -12,10 +15,7 @@ class Heic(Ready_Compression_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
         Пережимает изображение кодеком HEIF и сохраняет результат.
 
@@ -31,6 +31,8 @@ class Heic(Ready_Compression_Attacks):
         Raises:
             RuntimeError: если пакет pillow-heif не установлен
         """
+        defaults = {"input_data": None, "quality": 50}
+        args = {**defaults, **args}
         input_data = args["input_data"]
         output_data = args["output_data"]
         quality = int(args.get("quality", 50))

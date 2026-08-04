@@ -1,4 +1,7 @@
-from ...utils.expertise_utils import *
+import numpy as np
+
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import align_bits
 
 
 class BER(Ready_Robustness_Expertise):
@@ -10,13 +13,7 @@ class BER(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(
-        args: dict = {
-            "original_bits": "",
-            "extracted_bits": "",
-            "allow_length_mismatch": False,
-        }
-    ):
+    def expertise(**args):
         """
         Считает долю несовпадающих бит между исходным и извлечённым ЦВЗ.
 
@@ -32,6 +29,8 @@ class BER(Ready_Robustness_Expertise):
         Raises:
             ValueError: если длины различаются без allow_length_mismatch, либо обе строки пусты
         """
+        defaults = {"original_bits": None, "extracted_bits": None, "allow_length_mismatch": False}
+        args = {**defaults, **args}
         original_bits, extracted_bits, length = align_bits(
             args["original_bits"],
             args["extracted_bits"],

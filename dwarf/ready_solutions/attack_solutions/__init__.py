@@ -10,7 +10,10 @@ AttributeError.
 а лишь выкидывает соответствующие атаки из реестра.
 Такой случай разбирается отдельно и сопровождается предупреждением.
 """
-from dwarf.common_utils.common_utils import *
+import importlib
+import pkgutil
+import warnings
+from pathlib import Path
 
 _available = {module.name
               for module in pkgutil.walk_packages(__path__, prefix=__name__ + ".")

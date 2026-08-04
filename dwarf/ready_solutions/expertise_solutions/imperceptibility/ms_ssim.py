@@ -1,4 +1,7 @@
-from ...utils.expertise_utils import *
+import numpy as np
+
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Imperceptibility_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import downsample_by_two, gauss1d, load_gray, ssim_maps
 
 
 class MS_SSIM(Ready_Imperceptibility_Expertise):
@@ -11,10 +14,7 @@ class MS_SSIM(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "original_path": None,
-        "distorted_path": None
-    }):
+    def expertise(**args):
         """
         Считает MS-SSIM между двумя изображениями.
 
@@ -29,6 +29,8 @@ class MS_SSIM(Ready_Imperceptibility_Expertise):
         Raises:
             ValueError: если кадр меньше 176 пикселей по любой стороне
         """
+        defaults = {} # Написать дефолтные значения
+        args = {**defaults, **args}
         original = load_gray(args["original_path"])
         distorted = load_gray(args["distorted_path"])
 

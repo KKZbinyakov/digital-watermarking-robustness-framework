@@ -1,15 +1,13 @@
-from pathlib import Path
-from typing import Iterator
+from abc import ABC, ABCMeta, abstractmethod
 
-from dwarf.core.utils.utils import *
 
-class Ds_Core_Meta(abc.ABCMeta):
-    def __getattr__(cls, name: str): 
+class Ds_Core_Meta(ABCMeta):
+    def __getattr__(cls, name: str):
         if name in cls._registered_dss:
             return cls._registered_dss[name]
         raise AttributeError(f"{cls.__name__} has no attribute {name}")
 
-class Ds_Core(abc.ABC, metaclass=Ds_Core_Meta):
+class Ds_Core(ABC, metaclass=Ds_Core_Meta):
     """
     Класс, содержащий в себе все готовые решения для работы с датасетами.
 
@@ -40,11 +38,8 @@ class Ds_Core(abc.ABC, metaclass=Ds_Core_Meta):
         return cls.__subclasses__()
 
     @staticmethod
-    @abc.abstractmethod
-    def ds(args: dict = {
-        "original_bits": None,
-        "extracted_bits": None
-    }): 
+    @abstractmethod
+    def ds(**args):
         pass
 
     def get_ds_class_by_name(ds_name: str):
@@ -53,7 +48,7 @@ class Ds_Core(abc.ABC, metaclass=Ds_Core_Meta):
     def use_dss(dss: dict):
         all_dss = dss.keys()
         for ds_name in all_dss:
-            Ds_Core.get_ds_class_by_name(ds_name).ds(dss[ds_name])
+            Ds_Core.get_ds_class_by_name(ds_name).ds(**dss[ds_name])
 
 class Ready_Datasets(Ds_Core):
     """

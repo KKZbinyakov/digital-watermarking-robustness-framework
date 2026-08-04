@@ -3,7 +3,6 @@
 Метаданные проекта описаны в pyproject.toml, здесь задаётся только ext_modules
 """
 import sys
-
 from pathlib import Path
 
 import numpy

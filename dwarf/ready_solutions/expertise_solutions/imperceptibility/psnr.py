@@ -1,4 +1,7 @@
-from ...utils.expertise_utils import *
+import numpy as np
+
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Imperceptibility_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import load_rgb_float
 
 
 class PSNR(Ready_Imperceptibility_Expertise):
@@ -7,10 +10,7 @@ class PSNR(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "original_path": None,
-        "distorted_path": None
-    }):
+    def expertise(**args):
         """
         Считает PSNR между двумя изображениями по каналам RGB.
 
@@ -22,6 +22,8 @@ class PSNR(Ready_Imperceptibility_Expertise):
         Returns:
             float: PSNR в децибелах, inf при полном совпадении
         """
+        defaults = {} # Написать дефолтные значения
+        args = {**defaults, **args}
         original = load_rgb_float(args["original_path"])
         distorted = load_rgb_float(args["distorted_path"])
         mean_squared_error = np.mean((original - distorted) ** 2)

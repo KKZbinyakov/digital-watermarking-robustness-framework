@@ -1,4 +1,11 @@
-from ...utils.attack_utils import *
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+from PIL import Image
+
+from dwarf.core.attack_orchestrator.attack_core import Ready_Compression_Attacks
 
 
 class Flif(Ready_Compression_Attacks):
@@ -11,10 +18,7 @@ class Flif(Ready_Compression_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
         Перекодирует изображение через FLIF и сохраняет результат.
 
@@ -29,6 +33,8 @@ class Flif(Ready_Compression_Attacks):
         Raises:
             RuntimeError: если утилита flif недоступна в PATH
         """
+        defaults = {"input_data": None}
+        args = {**defaults, **args}
         input_data = args["input_data"]
         output_data = args["output_data"]
 

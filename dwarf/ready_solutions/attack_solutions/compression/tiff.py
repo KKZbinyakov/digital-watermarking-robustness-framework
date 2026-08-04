@@ -1,4 +1,7 @@
-from ...utils.attack_utils import *
+from PIL import Image
+
+from dwarf.core.attack_orchestrator.attack_core import Ready_Compression_Attacks
+from dwarf.ready_solutions.utils.attack_utils import roundtrip_buffer
 
 
 class Tiff(Ready_Compression_Attacks):
@@ -9,10 +12,7 @@ class Tiff(Ready_Compression_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
         Перекодирует изображение в TIFF и сохраняет результат.
 
@@ -25,6 +25,8 @@ class Tiff(Ready_Compression_Attacks):
         Returns:
             None
         """
+        defaults = {"input_data": None, "compression": "tiff_lzw"}
+        args = {**defaults, **args}
         input_data = args["input_data"]
         output_data = args["output_data"]
         compression = args.get("compression", "tiff_lzw")

@@ -1,4 +1,5 @@
 from dwarf import *
+from dwarf.ready_solutions import *
 
 if __name__ == "__main__":
     exp_obj = Expertise_Core.BER
@@ -10,11 +11,13 @@ if __name__ == "__main__":
     print(exp_obj.__name__)
 
     print(Attack_Core.get_all_attacks())
+    print(Expertise_Core.get_all_expertises())
+    print(Embedding_Core.get_all_embeddings())
 
-    Embedding_Core.LSB.embedding(args={"image_path": "Asuka.jpg", "watermark_bits": "1000110100000000000000000000000010001101000000000000000000000000", "output_path": "embeded.jpg"})
-    Attack_Core.Crop.attack(args={"input_data": "embeded.jpg", "output_data": "croped.jpg"})
-    Attack_Core.use_attacks({"Crop": {"input_data": "embeded.jpg", "output_data": "croped.jpg"}})
-    result = Embedding_Core.LSB.extraction(args={"input_data": "croped.jpg", "num_bits": 32})
-    print("BER:", Expertise_Core.BER.expertise(args={"original_bits": "10001101000000000000000000000000", "extracted_bits": result}))
+    # Embedding_Core.LSB.embedding(args={"image_path": "Asuka.jpg", "watermark_bits": "1000110100000000000000000000000010001101000000000000000000000000", "output_path": "embeded.jpg"})
+    # Attack_Core.Crop.attack(args={"input_data": "embeded.jpg", "output_data": "croped.jpg"})
+    # Attack_Core.use_attacks({"Crop": {"input_data": "embeded.jpg", "output_data": "croped.jpg"}})
+    # result = Embedding_Core.LSB.extraction(args={"input_data": "croped.jpg", "num_bits": 32})
+    # print("BER:", Expertise_Core.BER.expertise(args={"original_bits": "10001101000000000000000000000000", "extracted_bits": result}))
 
     pass

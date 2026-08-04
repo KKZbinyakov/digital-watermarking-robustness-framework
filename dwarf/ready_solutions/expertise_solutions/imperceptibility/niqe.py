@@ -1,4 +1,5 @@
-from ...utils.expertise_utils import *
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Imperceptibility_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import iqa_metric, to_tensor
 
 
 class NIQE(Ready_Imperceptibility_Expertise):
@@ -15,9 +16,7 @@ class NIQE(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "image_path": None
-    }):
+    def expertise(**args):
         """
         Считает NIQE для одного изображения.
 
@@ -31,5 +30,7 @@ class NIQE(Ready_Imperceptibility_Expertise):
         Raises:
             RuntimeError: если пакет pyiqa не установлен
         """
+        defaults = {} # Написать дефолтные значения
+        args = {**defaults, **args}
         metric = iqa_metric("niqe")
         return float(metric(to_tensor(args["image_path"])).item())

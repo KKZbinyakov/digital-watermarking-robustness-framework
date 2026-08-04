@@ -1,4 +1,7 @@
-from ...utils.attack_utils import *
+import numpy as np
+
+from dwarf.core.attack_orchestrator.attack_core import Ready_Color_Brightness_Attacks
+from dwarf.ready_solutions.utils.attack_utils import load_rgb, save_rgb
 
 
 class Bit_Depth_Reduction(Ready_Color_Brightness_Attacks):
@@ -10,10 +13,7 @@ class Bit_Depth_Reduction(Ready_Color_Brightness_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
         Огрубляет битовую глубину изображения и сохраняет результат.
 
@@ -32,6 +32,8 @@ class Bit_Depth_Reduction(Ready_Color_Brightness_Attacks):
         Raises:
             ValueError: если bits вне диапазона 1..8
         """
+        defaults = {}
+        args = {**defaults, **args}
         input_data = args["input_data"]
         output_data = args["output_data"]
         bits = int(args.get("bits", 4))

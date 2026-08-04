@@ -1,16 +1,12 @@
-from dwarf.ready_solutions.utils.embedding_utils import *
+import numpy as np
+from PIL import Image
+
+from dwarf.core.embedding_orchestrator.embedding_core import Ready_Spatial_Embeddings
 
 
 class LSB(Ready_Spatial_Embeddings):
     @staticmethod
-    def embedding(
-        args: dict = {
-            "input_image": [[[0]]],
-            "watermark_bits": "0",
-        }
-    ):
-        input_image = args["image_path"]
-        watermark_bits = args["watermark_bits"]
+    def embedding(**args):
         """
         Встраивает биты ЦВЗ в младшие биты всех каналов RGB изображения.
         :param input_data: матрица входного изображения
@@ -18,7 +14,11 @@ class LSB(Ready_Spatial_Embeddings):
 
         :return output_image: матрица изображения с встроенным ЦВЗ
         """
-        img = Image.open(image_path).convert("RGB")
+        defaults = {"input_image": None, "watermark_bits": None}
+        args = {**defaults, **args}
+        input_image = args["image_path"]
+        watermark_bits = args["watermark_bits"]
+        img = Image.open(input_image).convert("RGB")
         data = np.array(img)  # форма (H, W, 3)
         flat = data.ravel()  # одномерный массив всех каналов
 
@@ -33,13 +33,15 @@ class LSB(Ready_Spatial_Embeddings):
         return output_image
 
     @staticmethod
-    def extraction(args: dict = {"input_image": None, "num_bits": None}):
+    def extraction(**args):
         """
         Извлекает указанное количество бит из младших бит всех каналов RGB.
         :param image_path: путь к изображению (с встроенным ЦВЗ)
         :param num_bits: сколько бит извлечь
         :return bits_str: строка из '0' и '1'
         """
+        defaults = {}
+        args = {**defaults, **args}
         input_image = args["input_image"]
         num_bits = args["num_bits"]
         flat = input_image.ravel()

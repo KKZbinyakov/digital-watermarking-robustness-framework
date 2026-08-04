@@ -1,7 +1,11 @@
 """Папка реализации должна совпадать с её категорией из базового класса."""
 import inspect
-
+from pathlib import Path
 import pytest
+import sys
+
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 from dwarf.core.attack_orchestrator.attack_core import Attack_Core
 from dwarf.core.expertise_orchestrator.expertise_core import Expertise_Core

@@ -1,4 +1,5 @@
-from ...utils.expertise_utils import *
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Imperceptibility_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import load_gray, ssim_maps
 
 
 class SSIM(Ready_Imperceptibility_Expertise):
@@ -7,10 +8,7 @@ class SSIM(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "original_path": None,
-        "distorted_path": None
-    }):
+    def expertise(**args):
         """
         Считает средний по кадру SSIM между двумя изображениями.
 
@@ -22,6 +20,8 @@ class SSIM(Ready_Imperceptibility_Expertise):
         Returns:
             float: значение SSIM в диапазоне от -1 до 1, единица при полном совпадении
         """
+        defaults = {} # Написать дефолтные значения
+        args = {**defaults, **args}
         original = load_gray(args["original_path"])
         distorted = load_gray(args["distorted_path"])
         return float(ssim_maps(original, distorted)[0].mean())

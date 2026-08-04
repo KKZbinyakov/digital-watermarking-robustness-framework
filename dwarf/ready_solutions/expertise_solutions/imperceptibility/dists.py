@@ -1,4 +1,5 @@
-from ...utils.expertise_utils import *
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Imperceptibility_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import iqa_metric, to_tensor
 
 
 class DISTS(Ready_Imperceptibility_Expertise):
@@ -13,10 +14,7 @@ class DISTS(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "original_path": None,
-        "distorted_path": None
-    }):
+    def expertise(**args):
         """
         Считает DISTS между двумя изображениями.
 
@@ -31,6 +29,8 @@ class DISTS(Ready_Imperceptibility_Expertise):
         Raises:
             RuntimeError: если пакет pyiqa не установлен
         """
+        defaults = {} # Написать дефолтные значения
+        args = {**defaults, **args}
         metric = iqa_metric("dists")
         return float(metric(to_tensor(args["distorted_path"]),
                             to_tensor(args["original_path"])).item())

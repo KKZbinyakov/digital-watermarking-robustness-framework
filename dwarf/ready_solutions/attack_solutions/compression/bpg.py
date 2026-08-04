@@ -1,4 +1,11 @@
-from ...utils.attack_utils import *
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
+
+from PIL import Image
+
+from dwarf.core.attack_orchestrator.attack_core import Ready_Compression_Attacks
 
 
 class Bpg(Ready_Compression_Attacks):
@@ -10,10 +17,7 @@ class Bpg(Ready_Compression_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
         Пережимает изображение кодеком BPG и сохраняет результат.
 
@@ -29,6 +33,8 @@ class Bpg(Ready_Compression_Attacks):
         Raises:
             RuntimeError: если bpgenc или bpgdec недоступны в PATH
         """
+        defaults = {"input_data": None, "quality": 29}
+        args = {**defaults, **args}
         input_data = args["input_data"]
         output_data = args["output_data"]
         quality = int(args.get("quality", 29))

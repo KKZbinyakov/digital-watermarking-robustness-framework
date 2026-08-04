@@ -6,10 +6,7 @@ FSIM, работа с битовыми строками и метками дет
 нейросетевых метрик pyiqa.
 """
 import numpy as np
-
 from PIL import Image
-
-from ...core.expertise_orchestrator.expertise_core import Expertise_Core, Ready_Robustness_Expertise, Ready_Imperceptibility_Expertise
 
 
 def load_gray(image_path: str) -> np.ndarray:
@@ -499,7 +496,7 @@ def to_tensor(image_path: str):
         RuntimeError: если пакет torch не установлен
     """
     try:
-        import torch
+        import torch  # noqa: F401
     except ImportError as error:
         raise RuntimeError(
             "Для нейросетевых метрик нужен torch: pip install pyiqa"
@@ -526,7 +523,7 @@ def iqa_metric(name: str):
     """
     if name not in _IQA_CACHE:
         try:
-            import pyiqa
+            import pyiqa  # noqa: F401
         except ImportError as error:
             raise RuntimeError(
                 f"Для метрики {name} нужен пакет pyiqa: pip install pyiqa"

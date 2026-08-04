@@ -1,4 +1,7 @@
-from ...utils.expertise_utils import *
+import numpy as np
+
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import align_bits, bits_to_pm1
 
 
 class NC(Ready_Robustness_Expertise):
@@ -7,10 +10,7 @@ class NC(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "original_bits": None,
-        "extracted_bits": None
-    }):
+    def expertise(**args):
         """
         Считает нормированную корреляцию между исходным и извлечённым ЦВЗ.
 
@@ -26,6 +26,8 @@ class NC(Ready_Robustness_Expertise):
         Raises:
             ValueError: если длины различаются без allow_length_mismatch, либо обе строки пусты
         """
+        defaults = {"original_bits": None, "extracted_bits": None, "allow_length_mismatch": False}
+        args = {**defaults, **args}
         original_bits, extracted_bits, length = align_bits(
             args["original_bits"], args["extracted_bits"],
             bool(args.get("allow_length_mismatch", False)),

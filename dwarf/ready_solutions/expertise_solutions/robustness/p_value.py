@@ -1,4 +1,6 @@
-from ...utils.expertise_utils import *
+import numpy as np
+
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
 
 
 class P_Value(Ready_Robustness_Expertise):
@@ -7,10 +9,7 @@ class P_Value(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "statistic": None,
-        "null_samples": None
-    }):
+    def expertise(**args):
         """
         Считает долю выборок нулевого распределения, не меньших наблюдаемой статистики.
 
@@ -27,6 +26,7 @@ class P_Value(Ready_Robustness_Expertise):
         Returns:
             float: p-значение в диапазоне от 0 до 1, nan при пустой выборке
         """
+
         null_samples = np.asarray(args["null_samples"], dtype=float)
         if null_samples.size == 0:
             return float("nan")
