@@ -1,3 +1,5 @@
+"""Метрика DISTS: нейросетевое сравнение структуры и текстуры раздельно."""
+
 from dwarf.core.expertise_orchestrator.expertise_core import Ready_Imperceptibility_Expertise
 from dwarf.ready_solutions.utils.expertise_utils import iqa_metric, to_tensor
 
@@ -20,8 +22,8 @@ class DISTS(Ready_Imperceptibility_Expertise):
 
         Args:
             args (dict): параметры метрики
-                original_path (str): путь к оригинальному изображению
-                distorted_path (str): путь к изображению со встроенным ЦВЗ или после атаки
+                original_image (np.ndarray): матрица оригинального изображения
+                distorted_image (np.ndarray): матрица изображения со встроенным ЦВЗ или после атаки
 
         Returns:
             float: значение DISTS, ноль при полном совпадении
@@ -29,8 +31,7 @@ class DISTS(Ready_Imperceptibility_Expertise):
         Raises:
             RuntimeError: если пакет pyiqa не установлен
         """
-        defaults = {} # Написать дефолтные значения
+        defaults = {"original_image": None, "distorted_image": None}
         args = {**defaults, **args}
         metric = iqa_metric("dists")
-        return float(metric(to_tensor(args["distorted_path"]),
-                            to_tensor(args["original_path"])).item())
+        return float(metric(to_tensor(args["distorted_image"]), to_tensor(args["original_image"])).item())

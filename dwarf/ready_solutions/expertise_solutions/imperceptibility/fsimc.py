@@ -1,7 +1,9 @@
+"""Метрика FSIMc: цветной вариант FSIM с хроматической составляющей."""
+
 import numpy as np
 
 from dwarf.core.expertise_orchestrator.expertise_core import Ready_Imperceptibility_Expertise
-from dwarf.ready_solutions.utils.expertise_utils import downsample, fsim_luma_maps, load_rgb_float, rgb_to_yiq
+from dwarf.ready_solutions.utils.expertise_utils import downsample, fsim_luma_maps, rgb_to_yiq, to_rgb_float
 
 
 class FSIMc(Ready_Imperceptibility_Expertise):
@@ -23,16 +25,16 @@ class FSIMc(Ready_Imperceptibility_Expertise):
 
         Args:
             args (dict): параметры метрики
-                original_path (str): путь к оригинальному изображению
-                distorted_path (str): путь к изображению со встроенным ЦВЗ или после атаки
+                original_image (np.ndarray): матрица оригинального изображения
+                distorted_image (np.ndarray): матрица изображения со встроенным ЦВЗ или после атаки
 
         Returns:
             float: значение FSIMc, единица при полном совпадении
         """
-        defaults = {} # Написать дефолтные значения
+        defaults = {"original_image": None, "distorted_image": None}
         args = {**defaults, **args}
-        original_luma, original_i, original_q = rgb_to_yiq(load_rgb_float(args["original_path"]))
-        distorted_luma, distorted_i, distorted_q = rgb_to_yiq(load_rgb_float(args["distorted_path"]))
+        original_luma, original_i, original_q = rgb_to_yiq(to_rgb_float(args["original_image"]))
+        distorted_luma, distorted_i, distorted_q = rgb_to_yiq(to_rgb_float(args["distorted_image"]))
 
         factor = max(1, int(round(min(original_luma.shape) / 256)))
         original_luma = downsample(original_luma, factor)
@@ -46,10 +48,8 @@ class FSIMc(Ready_Imperceptibility_Expertise):
 
         stabilizer = 200.0
         chroma_exponent = 0.03
-        similarity_i = ((2 * original_i * distorted_i + stabilizer)
-                        / (original_i ** 2 + distorted_i ** 2 + stabilizer))
-        similarity_q = ((2 * original_q * distorted_q + stabilizer)
-                        / (original_q ** 2 + distorted_q ** 2 + stabilizer))
+        similarity_i = (2 * original_i * distorted_i + stabilizer) / (original_i**2 + distorted_i**2 + stabilizer)
+        similarity_q = (2 * original_q * distorted_q + stabilizer) / (original_q**2 + distorted_q**2 + stabilizer)
         chroma = similarity_i * similarity_q
         chroma = np.sign(chroma) * np.abs(chroma) ** chroma_exponent
 

@@ -1,7 +1,9 @@
+"""Метрика Watermark PSNR: качество восстановления изображения-знака."""
+
 import numpy as np
 
 from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
-from dwarf.ready_solutions.utils.expertise_utils import load_gray
+from dwarf.ready_solutions.utils.expertise_utils import to_gray
 
 
 class Watermark_PSNR(Ready_Robustness_Expertise):
@@ -21,16 +23,16 @@ class Watermark_PSNR(Ready_Robustness_Expertise):
 
         Args:
             args (dict): параметры метрики
-                original_watermark_path (str): путь к исходному изображению-знаку
-                extracted_watermark_path (str): путь к восстановленному изображению-знаку
+                original_watermark (np.ndarray): матрица исходного изображения-знака
+                extracted_watermark (np.ndarray): матрица восстановленного изображения-знака
 
         Returns:
             float: PSNR в децибелах, inf при полном совпадении
         """
-        defaults = {} # Написать дефолтные значения
+        defaults = {"original_watermark": None, "extracted_watermark": None}
         args = {**defaults, **args}
-        original = load_gray(args["original_watermark_path"])
-        extracted = load_gray(args["extracted_watermark_path"])
+        original = to_gray(args["original_watermark"])
+        extracted = to_gray(args["extracted_watermark"])
 
         rows = min(original.shape[0], extracted.shape[0])
         cols = min(original.shape[1], extracted.shape[1])
@@ -40,4 +42,4 @@ class Watermark_PSNR(Ready_Robustness_Expertise):
         mean_squared_error = np.mean((original - extracted) ** 2)
         if mean_squared_error == 0:
             return float("inf")
-        return float(10 * np.log10(255 ** 2 / mean_squared_error))
+        return float(10 * np.log10(255**2 / mean_squared_error))

@@ -1,7 +1,9 @@
+"""Атака уменьшения битовой глубины: отбрасывает младшие биты каналов."""
+
 import numpy as np
 
 from dwarf.core.attack_orchestrator.attack_core import Ready_Color_Brightness_Attacks
-from dwarf.ready_solutions.utils.attack_utils import load_rgb, save_rgb
+from dwarf.ready_solutions.utils.attack_utils import to_matrix
 
 
 class Bit_Depth_Reduction(Ready_Color_Brightness_Attacks):
@@ -15,34 +17,32 @@ class Bit_Depth_Reduction(Ready_Color_Brightness_Attacks):
     @staticmethod
     def attack(**args):
         """
-        Огрубляет битовую глубину изображения и сохраняет результат.
+        Огрубляет битовую глубину изображения.
 
         Результат зависит только от исходного уровня пикселя, поэтому
         преобразование считается один раз на таблицу из 256 значений.
 
         Args:
             args (dict): параметры атаки
-                input_data (str): путь к исходному изображению
-                output_data (str): путь для сохранения результата
+                input_image (np.ndarray): матрица изображения
                 bits (int): сколько старших бит оставить, 1..8 (по умолчанию 4)
 
         Returns:
-            None
+            np.ndarray: матрица изображения после атаки
 
         Raises:
             ValueError: если bits вне диапазона 1..8
         """
-        defaults = {}
+        defaults = {"input_image": None, "bits": 4}
         args = {**defaults, **args}
-        input_data = args["input_data"]
-        output_data = args["output_data"]
-        bits = int(args.get("bits", 4))
+        input_image = args["input_image"]
+        bits = int(args["bits"])
 
         if not 1 <= bits <= 8:
-            raise ValueError(f"bits должен быть в диапазоне 1..8, получено {bits}")
+            raise ValueError(f"bits must be in the range 1..8, got {bits}")
 
         shift = 8 - bits
         levels = (1 << bits) - 1
         lookup = (np.arange(256, dtype=np.uint16) >> shift) / levels * 255.0
         lookup = np.clip(lookup, 0, 255).round().astype(np.uint8)
-        save_rgb(lookup[load_rgb(input_data)], output_data)
+        return lookup[to_matrix(input_image)]

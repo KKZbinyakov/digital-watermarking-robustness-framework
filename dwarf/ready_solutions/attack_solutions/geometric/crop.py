@@ -1,9 +1,10 @@
 """Атака кадрирования: вырезает часть кадра и восстанавливает исходный размер."""
+
 import numpy as np
 from PIL import Image
 
 from dwarf.core.attack_orchestrator.attack_core import Ready_Geometric_Attacks
-from dwarf.ready_solutions.utils.attack_utils import load_rgb
+from dwarf.ready_solutions.utils.attack_utils import to_array, to_matrix
 
 _ANCHORS = {
     "center": ("middle", "middle"),
@@ -86,12 +87,12 @@ def _fill_color(fill) -> np.ndarray:
         try:
             levels = tuple(fill)
         except TypeError as error:
-            raise ValueError(f"fill должен быть уровнем 0..255 или тройкой RGB, получено {fill!r}") from error
+            raise ValueError(f"fill must be a level in 0..255 or an RGB triple, got {fill!r}") from error
 
     if len(levels) != 3:
-        raise ValueError(f"fill должен быть уровнем 0..255 или тройкой RGB, получено {fill!r}")
+        raise ValueError(f"fill must be a level in 0..255 or an RGB triple, got {fill!r}")
     if any(not 0 <= level <= 255 for level in levels):
-        raise ValueError(f"уровни fill должны быть в диапазоне 0..255, получено {fill!r}")
+        raise ValueError(f"fill levels must be in 0..255, got {fill!r}")
 
     return np.round(levels).astype(np.uint8)
 
@@ -103,17 +104,16 @@ class Crop(Ready_Geometric_Attacks):
     Сохраняет прямоугольную область кадра и отбрасывает всё за её границами.
     Исходный размер при этом восстанавливается: либо заливкой освободившегося
     места, либо растяжением сохранённой области.
-    синхронизации.
     """
 
     @staticmethod
     def attack(**args):
         """
-        Кадрирует изображение и сохраняет результат.
+        Кадрирует изображение.
 
         Args:
             args (dict): параметры атаки
-                input_image (list(list(list(int))): матрица изображения
+                input_image (np.ndarray): матрица изображения
                 ratio (float): доля сохраняемой стороны по каждой оси, 0 < ratio <= 1;
                     при 0.5 остаётся четверть площади (по умолчанию 0.5)
                 position (str): положение области: 'center', 'top_left', 'top_right',
@@ -129,33 +129,42 @@ class Crop(Ready_Geometric_Attacks):
                     (по умолчанию None)
 
         Returns:
-            output_image (list(list(list(int)))): матрица изображения после атаки
+            np.ndarray: матрица изображения после атаки; в режимах 'pad' и 'resize'
+                её размер совпадает с исходным, в режиме 'raw' равен размеру области
 
         Raises:
             ValueError: если ratio вне диапазона (0, 1] либо position, mode, resample
                 или fill недопустимы
         """
-        defaults = {"input_image": None, "ratio": 0.5, "position": "center", "mode": "pad", "fill": 0, "resample": "bicubic", "seed": None}
+        defaults = {
+            "input_image": None,
+            "ratio": 0.5,
+            "position": "center",
+            "mode": "pad",
+            "fill": 0,
+            "resample": "bicubic",
+            "seed": None,
+        }
         args = {**defaults, **args}
         input_image = args["input_image"]
-        ratio = float(args.get("ratio", 0.5))
-        position = args.get("position", "center")
-        mode = args.get("mode", "pad")
-        resample = args.get("resample", "bicubic")
-        fill = args.get("fill", 0)
-        seed = args.get("seed")
+        ratio = float(args["ratio"])
+        position = args["position"]
+        mode = args["mode"]
+        resample = args["resample"]
+        fill = args["fill"]
+        seed = args["seed"]
 
         if not 0 < ratio <= 1:
-            raise ValueError(f"ratio должен быть в диапазоне (0, 1], получено {ratio}")
+            raise ValueError(f"ratio must be in the range (0, 1], got {ratio}")
         if position not in _ANCHORS:
-            raise ValueError(f"Неизвестный position={position!r}, ожидается один из {', '.join(sorted(_ANCHORS))}")
+            raise ValueError(f"unknown position={position!r}, expected one of {', '.join(sorted(_ANCHORS))}")
         if mode not in _MODES:
-            raise ValueError(f"Неизвестный mode={mode!r}, ожидается один из {', '.join(_MODES)}")
+            raise ValueError(f"unknown mode={mode!r}, expected one of {', '.join(_MODES)}")
         if mode == "resize" and resample not in _RESAMPLING:
-            raise ValueError(f"Неизвестный resample={resample!r}, ожидается один из {', '.join(sorted(_RESAMPLING))}")
+            raise ValueError(f"unknown resample={resample!r}, expected one of {', '.join(sorted(_RESAMPLING))}")
         color = _fill_color(fill)
 
-        array = load_rgb(input_image)
+        array = to_matrix(input_image)
         height, width = array.shape[:2]
         kept_height = _side(height, ratio)
         kept_width = _side(width, ratio)
@@ -169,13 +178,10 @@ class Crop(Ready_Geometric_Attacks):
 
         if mode == "raw":
             return region
-        """
         if mode == "resize":
-            restored = Image.fromarray(region, "RGB").resize(
-                (width, height), _RESAMPLING[resample]
-            )
-            return restored
-        """
+            restored = Image.fromarray(region, "RGB").resize((width, height), _RESAMPLING[resample])
+            return to_array(restored)
+
         canvas = np.empty_like(array)
         canvas[:, :] = color
         canvas[top : top + kept_height, left : left + kept_width] = region

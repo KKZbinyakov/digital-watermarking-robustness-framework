@@ -1,3 +1,5 @@
+"""Метрика NC: нормированная корреляция исходного и извлечённого ЦВЗ."""
+
 import numpy as np
 
 from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
@@ -29,11 +31,12 @@ class NC(Ready_Robustness_Expertise):
         defaults = {"original_bits": None, "extracted_bits": None, "allow_length_mismatch": False}
         args = {**defaults, **args}
         original_bits, extracted_bits, length = align_bits(
-            args["original_bits"], args["extracted_bits"],
-            bool(args.get("allow_length_mismatch", False)),
+            args["original_bits"],
+            args["extracted_bits"],
+            bool(args["allow_length_mismatch"]),
         )
         if length == 0:
-            raise ValueError("нечего сравнивать: обе битовые строки пусты")
+            raise ValueError("nothing to compare: both bit strings are empty")
 
         original = bits_to_pm1(original_bits)
         extracted = bits_to_pm1(extracted_bits)

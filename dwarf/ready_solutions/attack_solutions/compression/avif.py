@@ -1,4 +1,4 @@
-from PIL import Image
+"""Атака сжатия AVIF: кодек AV1 через pillow-avif-plugin или pillow-heif."""
 
 from dwarf.core.attack_orchestrator.attack_core import Ready_Compression_Attacks
 from dwarf.ready_solutions.utils.attack_utils import roundtrip_buffer
@@ -17,37 +17,33 @@ class Avif(Ready_Compression_Attacks):
     @staticmethod
     def attack(**args):
         """
-        Пережимает изображение кодеком AVIF и сохраняет результат.
+        Пережимает изображение кодеком AVIF.
 
         Args:
             args (dict): параметры атаки
-                input_data (str): путь к исходному изображению
-                output_data (str): путь для сохранения результата
+                input_image (np.ndarray): матрица изображения
                 quality (int): качество, 0..100 (по умолчанию 50)
 
         Returns:
-            None
+            np.ndarray: матрица изображения после атаки
 
         Raises:
             RuntimeError: если не установлен ни pillow-avif-plugin, ни pillow-heif
         """
-        defaults = {"input_data": None, "quality": 50}
+        defaults = {"input_image": None, "quality": 50}
         args = {**defaults, **args}
-        input_data = args["input_data"]
-        output_data = args["output_data"]
-        quality = int(args.get("quality", 50))
+        input_image = args["input_image"]
+        quality = int(args["quality"])
 
         try:
             import pillow_avif  # noqa: F401
         except ImportError:
             try:
-                import pillow_heif  # noqa: F401
-                pillow_heif.register_avif_opener()
+                import pillow_heif
             except ImportError as error:
                 raise RuntimeError(
-                    "Для атаки Avif нужен pillow-avif-plugin или pillow-heif: "
-                    "pip install pillow-avif-plugin"
+                    "Avif attack requires pillow-avif-plugin or pillow-heif: pip install pillow-avif-plugin"
                 ) from error
+            pillow_heif.register_avif_opener()
 
-        img = Image.open(input_data).convert("RGB")
-        roundtrip_buffer(img, "AVIF", quality=quality).save(output_data)
+        return roundtrip_buffer(input_image, "AVIF", quality=quality)

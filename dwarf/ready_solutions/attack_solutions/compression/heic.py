@@ -1,4 +1,4 @@
-from PIL import Image
+"""Атака сжатия HEIC: кодек HEVC через pillow-heif."""
 
 from dwarf.core.attack_orchestrator.attack_core import Ready_Compression_Attacks
 from dwarf.ready_solutions.utils.attack_utils import roundtrip_buffer
@@ -17,33 +17,28 @@ class Heic(Ready_Compression_Attacks):
     @staticmethod
     def attack(**args):
         """
-        Пережимает изображение кодеком HEIF и сохраняет результат.
+        Пережимает изображение кодеком HEIF.
 
         Args:
             args (dict): параметры атаки
-                input_data (str): путь к исходному изображению
-                output_data (str): путь для сохранения результата
+                input_image (np.ndarray): матрица изображения
                 quality (int): качество, 0..100 (по умолчанию 50)
 
         Returns:
-            None
+            np.ndarray: матрица изображения после атаки
 
         Raises:
             RuntimeError: если пакет pillow-heif не установлен
         """
-        defaults = {"input_data": None, "quality": 50}
+        defaults = {"input_image": None, "quality": 50}
         args = {**defaults, **args}
-        input_data = args["input_data"]
-        output_data = args["output_data"]
-        quality = int(args.get("quality", 50))
+        input_image = args["input_image"]
+        quality = int(args["quality"])
 
         try:
             import pillow_heif
         except ImportError as error:
-            raise RuntimeError(
-                "Для атаки Heic нужен пакет pillow-heif: pip install pillow-heif"
-            ) from error
+            raise RuntimeError("Heic attack requires the pillow-heif package: pip install pillow-heif") from error
         pillow_heif.register_heif_opener()
 
-        img = Image.open(input_data).convert("RGB")
-        roundtrip_buffer(img, "HEIF", quality=quality).save(output_data)
+        return roundtrip_buffer(input_image, "HEIF", quality=quality)

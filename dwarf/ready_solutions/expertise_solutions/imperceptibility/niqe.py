@@ -1,3 +1,5 @@
+"""Метрика NIQE: безэталонная оценка естественности статистик изображения."""
+
 from dwarf.core.expertise_orchestrator.expertise_core import Ready_Imperceptibility_Expertise
 from dwarf.ready_solutions.utils.expertise_utils import iqa_metric, to_tensor
 
@@ -22,7 +24,7 @@ class NIQE(Ready_Imperceptibility_Expertise):
 
         Args:
             args (dict): параметры метрики
-                image_path (str): путь к оцениваемому изображению
+                input_image (np.ndarray): матрица оцениваемого изображения
 
         Returns:
             float: значение NIQE, меньше — лучше
@@ -30,7 +32,7 @@ class NIQE(Ready_Imperceptibility_Expertise):
         Raises:
             RuntimeError: если пакет pyiqa не установлен
         """
-        defaults = {} # Написать дефолтные значения
+        defaults = {"input_image": None}
         args = {**defaults, **args}
         metric = iqa_metric("niqe")
-        return float(metric(to_tensor(args["image_path"])).item())
+        return float(metric(to_tensor(args["input_image"])).item())

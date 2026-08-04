@@ -6,7 +6,10 @@ cimport cython
 cimport numpy as cnp
 from libc.math cimport floor
 
-from ...utils.attack_utils import *
+from PIL import Image, ImageOps
+
+from dwarf.core.attack_orchestrator.attack_core import Ready_Color_Brightness_Attacks
+from dwarf.ready_solutions.utils.attack_utils import to_array, to_pil
 
 cnp.import_array()
 
@@ -157,54 +160,56 @@ class Histogram_Equalization(Ready_Color_Brightness_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
-        Выравнивает гистограмму изображения и сохраняет результат.
+        Выравнивает гистограмму изображения.
 
         Args:
             args (dict): параметры атаки
-                input_data (str): путь к исходному изображению
-                output_data (str): путь для сохранения результата
+                input_image (np.ndarray): матрица изображения
                 method (str): 'global' или 'clahe' (по умолчанию 'global')
                 tiles (int): число тайлов по каждой оси для CLAHE, не меньше 2 (по умолчанию 8)
                 clip_limit (float): множитель ограничения контраста для CLAHE (по умолчанию 2.0)
                 bins (int): число корзин гистограммы для CLAHE, 2..256 (по умолчанию 256)
 
         Returns:
-            None
+            np.ndarray: матрица изображения после атаки
 
         Raises:
             ValueError: если method неизвестен, tiles меньше 2 или bins вне диапазона 2..256
         """
-        input_data = args["input_data"]
-        output_data = args["output_data"]
-        method = args.get("method", "global")
-        cdef Py_ssize_t tiles = int(args.get("tiles", 8))
-        cdef double clip_limit = float(args.get("clip_limit", 2.0))
-        cdef Py_ssize_t bins = int(args.get("bins", 256))
+        defaults = {
+            "input_image": None,
+            "method": "global",
+            "tiles": 8,
+            "clip_limit": 2.0,
+            "bins": 256,
+        }
+        args = {**defaults, **args}
+        input_image = args["input_image"]
+        method = args["method"]
+        cdef Py_ssize_t tiles = int(args["tiles"])
+        cdef double clip_limit = float(args["clip_limit"])
+        cdef Py_ssize_t bins = int(args["bins"])
         cdef unsigned char[:, ::1] luma
         cdef double[:, :, ::1] maps_view
         cdef double[:, ::1] output_view
         cdef double tile_height, tile_width
 
+        img = to_pil(input_image)
+
         if method == "global":
-            img = Image.open(input_data).convert("RGB")
-            ImageOps.equalize(img).save(output_data)
-            return
+            return to_array(ImageOps.equalize(img))
 
         if method != "clahe":
             raise ValueError(
-                f"Неизвестный method={method!r}, ожидается 'global' или 'clahe'"
+                f"unknown method={method!r}, expected 'global' or 'clahe'"
             )
         if tiles < 2:
-            raise ValueError(f"tiles должен быть не меньше 2, получено {tiles}")
+            raise ValueError(f"tiles must be at least 2, got {tiles}")
         if not 2 <= bins <= 256:
-            raise ValueError(f"bins должен быть в диапазоне 2..256, получено {bins}")
+            raise ValueError(f"bins must be in the range 2..256, got {bins}")
 
-        img = Image.open(input_data).convert("RGB")
         ycbcr = np.asarray(img.convert("YCbCr")).astype(np.float64)
         luma_array = np.ascontiguousarray(ycbcr[:, :, 0].astype(np.uint8))
         maps, height_step, width_step = _build_maps(luma_array, tiles, clip_limit, bins)
@@ -219,5 +224,4 @@ class Histogram_Equalization(Ready_Color_Brightness_Attacks):
             _interpolate(luma, maps_view, output_view, tile_height, tile_width, tiles)
 
         ycbcr[:, :, 0] = equalized
-        result = Image.fromarray(np.clip(ycbcr, 0, 255).round().astype(np.uint8), "YCbCr")
-        result.convert("RGB").save(output_data)
+        return to_array(Image.fromarray(np.clip(ycbcr, 0, 255).round().astype(np.uint8), "YCbCr"))

@@ -1,7 +1,10 @@
+"""Атака гауссовым шумом в заданном цветовом пространстве."""
+
 import numpy as np
 from PIL import Image
 
 from dwarf.core.attack_orchestrator.attack_core import Ready_Color_Brightness_Attacks
+from dwarf.ready_solutions.utils.attack_utils import to_array, to_pil
 
 
 class Color_Space_Noise(Ready_Color_Brightness_Attacks):
@@ -12,30 +15,27 @@ class Color_Space_Noise(Ready_Color_Brightness_Attacks):
     @staticmethod
     def attack(**args):
         """
-        Добавляет шум в заданном цветовом пространстве и сохраняет результат.
+        Добавляет шум в заданном цветовом пространстве.
 
         Args:
             args (dict): параметры атаки
-                input_data (str): путь к исходному изображению
-                output_data (str): путь для сохранения результата
+                input_image (np.ndarray): матрица изображения
                 space (str): цветовое пространство Pillow, 'YCbCr', 'HSV' или 'LAB' (по умолчанию 'YCbCr')
                 noise_std (float): стандартное отклонение шума в единицах канала 0..255 (по умолчанию 10.0)
                 seed (int): зерно генератора случайных чисел (по умолчанию None)
 
         Returns:
-            None
+            np.ndarray: матрица изображения после атаки
         """
-        defaults = {"input_data": None, "space": "YCbCr", "noise_std": 10.0, "seed": None}
+        defaults = {"input_image": None, "space": "YCbCr", "noise_std": 10.0, "seed": None}
         args = {**defaults, **args}
-        input_data = args["input_data"]
-        output_data = args["output_data"]
-        space = args.get("space", "YCbCr")
-        noise_std = float(args.get("noise_std", 10.0))
-        seed = args.get("seed")
+        input_image = args["input_image"]
+        space = args["space"]
+        noise_std = float(args["noise_std"])
+        seed = args["seed"]
 
         rng = np.random.default_rng(seed)
-        img = Image.open(input_data).convert("RGB")
-        converted = np.asarray(img.convert(space)).astype(np.float64)
+        converted = np.asarray(to_pil(input_image).convert(space)).astype(np.float64)
         converted += rng.normal(0.0, noise_std, converted.shape)
         converted = np.clip(converted, 0, 255).round().astype(np.uint8)
-        Image.fromarray(converted, space).convert("RGB").save(output_data)
+        return to_array(Image.fromarray(converted, space))

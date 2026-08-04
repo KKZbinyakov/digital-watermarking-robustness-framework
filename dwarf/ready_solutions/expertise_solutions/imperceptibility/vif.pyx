@@ -12,7 +12,8 @@ import numpy as np
 cimport cython
 cimport numpy as cnp
 
-from ...utils.expertise_utils import *
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Imperceptibility_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import to_gray
 
 cnp.import_array()
 
@@ -317,17 +318,14 @@ class VIF(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "original_path": None,
-        "distorted_path": None
-    }):
+    def expertise(**args):
         """
         Считает VIF между двумя изображениями.
 
         Args:
             args (dict): параметры метрики
-                original_path (str): путь к оригинальному изображению
-                distorted_path (str): путь к изображению со встроенным ЦВЗ или после атаки
+                original_image (np.ndarray): матрица оригинального изображения
+                distorted_image (np.ndarray): матрица изображения со встроенным ЦВЗ или после атаки
                 block_size (int): сторона окрестности GSM-модели (по умолчанию 3)
                 sigma_nsq (float): дисперсия шума зрительной системы (по умолчанию 0.4)
 
@@ -337,26 +335,33 @@ class VIF(Ready_Imperceptibility_Expertise):
         Raises:
             ValueError: если параметры недопустимы, размеры не совпадают или кадр слишком мал
         """
-        block_size = int(args.get("block_size", 3))
-        sigma_nsq = float(args.get("sigma_nsq", 0.4))
+        defaults = {
+            "original_image": None,
+            "distorted_image": None,
+            "block_size": 3,
+            "sigma_nsq": 0.4,
+        }
+        args = {**defaults, **args}
+        block_size = int(args["block_size"])
+        sigma_nsq = float(args["sigma_nsq"])
         if block_size < 1:
-            raise ValueError(f"block_size должен быть не меньше 1, получено {block_size}")
+            raise ValueError(f"block_size must be at least 1, got {block_size}")
         if sigma_nsq <= 0:
-            raise ValueError(f"sigma_nsq должна быть больше нуля, получено {sigma_nsq}")
+            raise ValueError(f"sigma_nsq must be greater than zero, got {sigma_nsq}")
 
-        reference = load_gray(args["original_path"])
-        distorted = load_gray(args["distorted_path"])
+        reference = to_gray(args["original_image"])
+        distorted = to_gray(args["distorted_image"])
         if reference.shape != distorted.shape:
             raise ValueError(
-                f"размеры изображений не совпадают: {reference.shape} против {distorted.shape}"
+                f"image shapes differ: {reference.shape} vs {distorted.shape}"
             )
 
         height = 4
         minimum_side = 8 * (3 * block_size)
         if min(reference.shape) < minimum_side:
             raise ValueError(
-                f"для VIF нужен кадр не меньше {minimum_side} пикселей по каждой стороне, "
-                f"получено {reference.shape}"
+                f"VIF requires an image of at least {minimum_side} pixels on each side, "
+                f"got {reference.shape}"
             )
 
         reference_bands = oriented_subbands(reference, height)

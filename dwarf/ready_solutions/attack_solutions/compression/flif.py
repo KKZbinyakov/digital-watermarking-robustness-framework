@@ -1,3 +1,5 @@
+"""Атака перекодирования в FLIF: сжатие без потерь через внешнюю утилиту flif."""
+
 import shutil
 import subprocess
 import tempfile
@@ -6,6 +8,7 @@ from pathlib import Path
 from PIL import Image
 
 from dwarf.core.attack_orchestrator.attack_core import Ready_Compression_Attacks
+from dwarf.ready_solutions.utils.attack_utils import to_array, to_pil
 
 
 class Flif(Ready_Compression_Attacks):
@@ -20,36 +23,36 @@ class Flif(Ready_Compression_Attacks):
     @staticmethod
     def attack(**args):
         """
-        Перекодирует изображение через FLIF и сохраняет результат.
+        Перекодирует изображение через FLIF.
+
+        Кодек работает только с файлами, поэтому обмен идёт через временный
+        каталог: он удаляется вместе с промежуточными PNG до возврата результата.
 
         Args:
             args (dict): параметры атаки
-                input_data (str): путь к исходному изображению
-                output_data (str): путь для сохранения результата
+                input_image (np.ndarray): матрица изображения
 
         Returns:
-            None
+            np.ndarray: матрица изображения после атаки
 
         Raises:
             RuntimeError: если утилита flif недоступна в PATH
         """
-        defaults = {"input_data": None}
+        defaults = {"input_image": None}
         args = {**defaults, **args}
-        input_data = args["input_data"]
-        output_data = args["output_data"]
+        input_image = args["input_image"]
 
         if shutil.which("flif") is None:
             raise RuntimeError(
-                "Для атаки Flif нужна утилита flif в PATH. Формат заброшен, "
-                "как современную замену стоит рассмотреть JPEG XL."
+                "Flif attack requires the flif utility in PATH. "
+                "The format is abandoned, consider JPEG XL as a modern replacement."
             )
 
-        img = Image.open(input_data).convert("RGB")
         with tempfile.TemporaryDirectory() as tmp:
             source_png = str(Path(tmp) / "source.png")
             encoded = str(Path(tmp) / "encoded.flif")
             decoded_png = str(Path(tmp) / "decoded.png")
-            img.save(source_png)
+            to_pil(input_image).save(source_png)
             subprocess.run(["flif", "-e", source_png, encoded], check=True)
             subprocess.run(["flif", "-d", encoded, decoded_png], check=True)
-            Image.open(decoded_png).convert("RGB").save(output_data)
+            return to_array(Image.open(decoded_png))

@@ -1,7 +1,9 @@
+"""Метрика BER: доля неверно восстановленных бит ЦВЗ."""
+
 import numpy as np
 
 from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
-from dwarf.ready_solutions.utils.expertise_utils import align_bits
+from dwarf.ready_solutions.utils.expertise_utils import align_bits, bits_to_array
 
 
 class BER(Ready_Robustness_Expertise):
@@ -34,8 +36,11 @@ class BER(Ready_Robustness_Expertise):
         original_bits, extracted_bits, length = align_bits(
             args["original_bits"],
             args["extracted_bits"],
-            bool(args.get("allow_length_mismatch", False)),
+            bool(args["allow_length_mismatch"]),
         )
         if length == 0:
-            raise ValueError("нечего сравнивать: обе битовые строки пусты")
-        return float(np.count_nonzero(original_bits != extracted_bits) / length)
+            raise ValueError("nothing to compare: both bit strings are empty")
+
+        original = bits_to_array(original_bits)
+        extracted = bits_to_array(extracted_bits)
+        return float(np.count_nonzero(original != extracted) / length)

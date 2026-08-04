@@ -1,3 +1,5 @@
+"""Метрика Precision: доля верных срабатываний детектора ЦВЗ."""
+
 from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
 from dwarf.ready_solutions.utils.expertise_utils import confusion_counts
 

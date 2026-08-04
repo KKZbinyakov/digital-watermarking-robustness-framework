@@ -63,11 +63,27 @@ target-version = "py310"          # версия Python для совмести�
 line-length = 120                 # как в black (или 100/120 на ваш вкус)
 indent-width = 4
 
+# Общий exclude: действует и на ruff check, и на ruff format.
+# Внутри [tool.ruff.lint] он исключал бы файлы только из линтера.
+exclude = [
+    "main.py",
+    "tests/*.py",
+    "diagen.py",
+]
+
 [tool.ruff.format]
 quote-style = "double"            # двойные кавычки (как black)
 indent-style = "space"            # пробелы, не табы
 skip-magic-trailing-comma = false # уважать висячие запятые
 docstring-code-format = true      # форматировать код в docstrings
+
+# Ядро ещё не приводилось к ruff format. Пока это не сделано отдельной задачей,
+# форматтер его не трогает: иначе `ruff format .` создавал бы шумный диff в
+# чужих файлах при любой правке решений. Линтер (ruff check) на ядро действует.
+exclude = [
+    "dwarf/__init__.py",
+    "dwarf/core/**",
+]
 
 [tool.ruff.lint]
 select = [
@@ -82,14 +98,9 @@ select = [
     "SIM", # flake8-simplify
 ]
 ignore = [
-    "E501",
-    "N801",
-    "N805"]  # длинные строки — форматтер сам разберётся
-
-exclude = [
-    "main.py",
-    "tests/*.py",
-    "diagen.py",
+    "E501",   # длинные строки — форматтер сам разберётся
+    "N801",   # Pascal_Snake в именах классов — принятое в проекте соглашение
+    "N805",
 ]
 
 [tool.ruff.lint.pydocstyle]

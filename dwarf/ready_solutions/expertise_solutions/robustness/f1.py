@@ -1,10 +1,12 @@
+"""Метрика F1: гармоническое среднее точности и полноты детектора ЦВЗ."""
+
 from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
 from dwarf.ready_solutions.utils.expertise_utils import confusion_counts
 
 
 class F1(Ready_Robustness_Expertise):
     """
-    Гармоническое среднее точности и полноты детектора..
+    Гармоническое среднее точности и полноты детектора.
     """
 
     @staticmethod
@@ -25,9 +27,7 @@ class F1(Ready_Robustness_Expertise):
         """
         defaults = {"y_true": None, "y_pred": None}
         args = {**defaults, **args}
-        true_positive, _, false_positive, false_negative = confusion_counts(
-            args["y_true"], args["y_pred"]
-        )
+        true_positive, _, false_positive, false_negative = confusion_counts(args["y_true"], args["y_pred"])
         detected = true_positive + false_positive
         actual = true_positive + false_negative
         precision = true_positive / detected if detected else 0.0

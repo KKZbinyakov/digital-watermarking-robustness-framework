@@ -1,3 +1,5 @@
+"""Метрика AUC: площадь под ROC-кривой детектора ЦВЗ."""
+
 import numpy as np
 
 from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
@@ -33,9 +35,7 @@ class AUC(Ready_Robustness_Expertise):
         y_true = np.asarray(args["y_true"])
         y_scores = np.asarray(args["y_scores"], dtype=float)
         if y_true.shape != y_scores.shape:
-            raise ValueError(
-                f"формы не совпадают: метки {y_true.shape}, оценки {y_scores.shape}"
-            )
+            raise ValueError(f"shapes differ: labels {y_true.shape}, scores {y_scores.shape}")
 
         positives = int((y_true == 1).sum())
         negatives = int((y_true == 0).sum())
@@ -43,5 +43,4 @@ class AUC(Ready_Robustness_Expertise):
             return float("nan")
 
         ranks = avg_ranks(y_scores)
-        return float((ranks[y_true == 1].sum() - positives * (positives + 1) / 2)
-                     / (positives * negatives))
+        return float((ranks[y_true == 1].sum() - positives * (positives + 1) / 2) / (positives * negatives))

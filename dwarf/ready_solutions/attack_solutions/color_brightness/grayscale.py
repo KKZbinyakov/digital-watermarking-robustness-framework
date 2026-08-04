@@ -1,6 +1,7 @@
-from PIL import Image
+"""Атака обесцвечивания: сводит кадр к оттенкам серого."""
 
 from dwarf.core.attack_orchestrator.attack_core import Ready_Color_Brightness_Attacks
+from dwarf.ready_solutions.utils.attack_utils import to_array, to_pil
 
 
 class Grayscale(Ready_Color_Brightness_Attacks):
@@ -13,19 +14,17 @@ class Grayscale(Ready_Color_Brightness_Attacks):
     @staticmethod
     def attack(**args):
         """
-        Обесцвечивает изображение и сохраняет результат.
+        Обесцвечивает изображение.
 
         Args:
             args (dict): параметры атаки
-                input_data (str): путь к исходному изображению
-                output_data (str): путь для сохранения результата
+                input_image (np.ndarray): матрица изображения
 
         Returns:
-            None
+            np.ndarray: матрица изображения после атаки
         """
-        defaults = {"input_data": None}
+        defaults = {"input_image": None}
         args = {**defaults, **args}
-        input_data = args["input_data"]
-        output_data = args["output_data"]
+        input_image = args["input_image"]
 
-        Image.open(input_data).convert("L").convert("RGB").save(output_data)
+        return to_array(to_pil(input_image).convert("L"))
