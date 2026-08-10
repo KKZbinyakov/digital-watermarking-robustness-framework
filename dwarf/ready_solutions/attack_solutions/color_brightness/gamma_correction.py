@@ -1,4 +1,9 @@
-from ...utils.attack_utils import *
+"""Атака гамма-коррекции: поканальное степенное преобразование уровней."""
+
+import numpy as np
+
+from dwarf.core.attack_orchestrator.attack_core import Ready_Color_Brightness_Attacks
+from dwarf.ready_solutions.utils.attack_utils import to_matrix
 
 
 class Gamma_Correction(Ready_Color_Brightness_Attacks):
@@ -10,35 +15,32 @@ class Gamma_Correction(Ready_Color_Brightness_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
-        Применяет гамма-коррекцию к изображению и сохраняет результат.
+        Применяет гамма-коррекцию к изображению.
 
         Результат зависит только от исходного уровня пикселя, поэтому
         преобразование считается один раз на таблицу из 256 значений.
 
         Args:
             args (dict): параметры атаки
-                input_data (str): путь к исходному изображению
-                output_data (str): путь для сохранения результата
+                input_image (np.ndarray): матрица изображения
                 gamma (float): коэффициент гаммы, больше нуля (по умолчанию 1.5)
 
         Returns:
-            None
+            np.ndarray: матрица изображения после атаки
 
         Raises:
             ValueError: если gamma не положительна
         """
-        input_data = args["input_data"]
-        output_data = args["output_data"]
-        gamma = float(args.get("gamma", 1.5))
+        defaults = {"input_image": None, "gamma": 1.5}
+        args = {**defaults, **args}
+        input_image = args["input_image"]
+        gamma = float(args["gamma"])
 
         if gamma <= 0:
-            raise ValueError(f"gamma должна быть больше нуля, получено {gamma}")
+            raise ValueError(f"gamma must be greater than zero, got {gamma}")
 
         levels = np.arange(256, dtype=np.float64) / 255.0
-        lookup = np.clip(255.0 * levels ** gamma, 0, 255).round().astype(np.uint8)
-        save_rgb(lookup[load_rgb(input_data)], output_data)
+        lookup = np.clip(255.0 * levels**gamma, 0, 255).round().astype(np.uint8)
+        return lookup[to_matrix(input_image)]

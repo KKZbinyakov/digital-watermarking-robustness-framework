@@ -8,10 +8,10 @@ DWARF Architecture Tree Visualizer v2
     python generate_tree.py [путь_к_папке] [выходной_файл.html]
 """
 import ast
-import re
-import os
-import sys
 import json
+import os
+import re
+import sys
 
 
 def get_name(node):
@@ -152,7 +152,7 @@ def analyze_repo(root_dir):
     """Анализирует репозиторий: классы, функции, файлы"""
     classes = {}      # имя -> {file, bases, children, methods}
     files = {}        # rel_path -> {classes: [], functions: []}
-    
+
     for dirpath, _, filenames in os.walk(root_dir):
         for fname in filenames:
             if not fname.endswith((".py", ".pyx")):
@@ -160,7 +160,7 @@ def analyze_repo(root_dir):
             fpath = os.path.join(dirpath, fname)
             rel = os.path.relpath(fpath, root_dir).replace("\\", "/")
             try:
-                with open(fpath, "r", encoding="utf-8") as f:
+                with open(fpath, encoding="utf-8") as f:
                     source = f.read()
                 if not source.strip():
                     continue
@@ -178,9 +178,9 @@ def analyze_repo(root_dir):
                 tree = ast.parse(source)
             except Exception:
                 continue
-            
+
             file_data = {"classes": [], "functions": []}
-            
+
             for node in ast.iter_child_nodes(tree):
                 if isinstance(node, ast.ClassDef):
                     bases = [get_name(b) for b in node.bases if get_name(b)]
@@ -188,7 +188,7 @@ def analyze_repo(root_dir):
                     for item in ast.iter_child_nodes(node):
                         if isinstance(item, ast.FunctionDef):
                             methods.append(get_func_signature(item))
-                    
+
                     cls_info = {
                         "name": node.name,
                         "file": rel,
@@ -198,18 +198,18 @@ def analyze_repo(root_dir):
                     }
                     classes[node.name] = cls_info
                     file_data["classes"].append(cls_info)
-                
+
                 elif isinstance(node, ast.FunctionDef):
                     file_data["functions"].append(get_func_signature(node))
-            
+
             files[rel] = file_data
-    
+
     # Строим дерево наследования
     for name, info in classes.items():
         for base in info["bases"]:
             if base in classes and base != name:
                 classes[base]["children"].append(name)
-    
+
     return classes, files
 
 
@@ -240,10 +240,10 @@ def make_class_node(cls_name, classes, visited=None):
     if cls_name in visited or cls_name not in classes:
         return None
     visited.add(cls_name)
-    
+
     info = classes[cls_name]
     group = get_group(info["file"])
-    
+
     node = {
         "name": cls_name,
         "type": "class",
@@ -251,16 +251,16 @@ def make_class_node(cls_name, classes, visited=None):
         "path": info["file"],
         "bases": info["bases"],
     }
-    
+
     children = []
     for child_name in sorted(info["children"]):
         child_node = make_class_node(child_name, classes, visited.copy())
         if child_node:
             children.append(child_node)
-    
+
     if children:
         node["children"] = children
-    
+
     return node
 
 
@@ -304,19 +304,19 @@ def folder_of(rel, dirname):
 
 def build_tree_data(classes, files, root_dir):
     """Строит иерархическое дерево для D3.js"""
-    
+
     tree = {
         "name": "DWARF Framework",
         "type": "root",
         "group": "root",
         "children": []
     }
-    
+
     # ============================================================
     #  1. ЯДРО — иерархия классов (метаклассы + ABC + категории)
     # ============================================================
     core_children = []
-    
+
     # Метаклассы
     meta_names = ["Attack_Core_Meta", "Embedding_Core_Meta", "Expertise_Core_Meta", "Ds_Core_Meta"]
     meta_nodes = []
@@ -330,7 +330,7 @@ def build_tree_data(classes, files, root_dir):
             "group": "core",
             "children": meta_nodes
         })
-    
+
     # Базовые ABC
     abc_names = ["Attack_Core", "Embedding_Core", "Expertise_Core", "Ds_Core"]
     abc_nodes = []
@@ -349,7 +349,7 @@ def build_tree_data(classes, files, root_dir):
             elif abc == "Ds_Core":
                 node["name"] = abc
             abc_nodes.append(node)
-    
+
     if abc_nodes:
         core_children.append({
             "name": "Базовые ABC",
@@ -357,7 +357,7 @@ def build_tree_data(classes, files, root_dir):
             "group": "core",
             "children": abc_nodes
         })
-    
+
     if core_children:
         tree["children"].append({
             "name": "⚙️ Ядро",
@@ -365,7 +365,7 @@ def build_tree_data(classes, files, root_dir):
             "group": "core",
             "children": core_children
         })
-    
+
     # ============================================================
     #  2. РЕАЛИЗАЦИИ — файловая структура ready_solutions
     # ============================================================
@@ -375,7 +375,7 @@ def build_tree_data(classes, files, root_dir):
         "expertise_solutions": ("Экспертиза", "expert"),
         "ds_solutions": ("🟣 Датасеты", "data"),
     }
-    
+
     solutions_children = []
     for dirname, (label, group) in solutions_dirs.items():
         by_category = {}
@@ -386,7 +386,7 @@ def build_tree_data(classes, files, root_dir):
             basename = os.path.basename(rel)
             if not fdata["classes"] and not fdata["functions"] and basename == "__init__.py":
                 continue
-            
+
             file_node = {
                 "name": basename,
                 "type": "file",
@@ -394,7 +394,7 @@ def build_tree_data(classes, files, root_dir):
                 "path": rel,
             }
             file_children = []
-            
+
             # Классы файла
             for cls in fdata["classes"]:
                 cls_node = {
@@ -411,7 +411,7 @@ def build_tree_data(classes, files, root_dir):
                         for m in cls["methods"]
                     ]
                 file_children.append(cls_node)
-            
+
             # Функции файла (если есть)
             for func in fdata["functions"]:
                 file_children.append({
@@ -420,7 +420,7 @@ def build_tree_data(classes, files, root_dir):
                     "group": group,
                     "path": rel,
                 })
-            
+
             if file_children:
                 file_node["children"] = file_children
 
@@ -434,7 +434,7 @@ def build_tree_data(classes, files, root_dir):
             if folder and folder != category:
                 file_node["name"] = f"{basename}  \u26a0 в папке {folder}"
             by_category.setdefault(category, []).append(file_node)
-        
+
         if by_category:
             category_nodes = [
                 {
@@ -451,7 +451,7 @@ def build_tree_data(classes, files, root_dir):
                 "group": group,
                 "children": category_nodes
             })
-    
+
     if solutions_children:
         tree["children"].append({
             "name": "Реализации",
@@ -459,7 +459,7 @@ def build_tree_data(classes, files, root_dir):
             "group": "other",
             "children": solutions_children
         })
-    
+
     # ============================================================
     #  3. УТИЛИТЫ — файлы с функциями
     # ============================================================
@@ -471,7 +471,7 @@ def build_tree_data(classes, files, root_dir):
         basename = os.path.basename(rel)
         if not fdata["classes"] and not fdata["functions"] and basename == "__init__.py":
             continue
-        
+
         file_node = {
             "name": basename,
             "type": "file",
@@ -479,7 +479,7 @@ def build_tree_data(classes, files, root_dir):
             "path": rel,
         }
         file_children = []
-        
+
         for cls in fdata["classes"]:
             cls_node = {
                 "name": cls["name"],
@@ -494,7 +494,7 @@ def build_tree_data(classes, files, root_dir):
                     for m in cls["methods"]
                 ]
             file_children.append(cls_node)
-        
+
         for func in fdata["functions"]:
             file_children.append({
                 "name": func,
@@ -502,11 +502,11 @@ def build_tree_data(classes, files, root_dir):
                 "group": "utils",
                 "path": rel,
             })
-        
+
         if file_children:
             file_node["children"] = file_children
         util_files.append(file_node)
-    
+
     if util_files:
         tree["children"].append({
             "name": "🛠️ Утилиты",
@@ -514,7 +514,7 @@ def build_tree_data(classes, files, root_dir):
             "group": "utils",
             "children": util_files
         })
-    
+
     # ============================================================
     #  4. ТОЧКА ВХОДА
     # ============================================================
@@ -547,7 +547,7 @@ def build_tree_data(classes, files, root_dir):
             if file_children:
                 file_node["children"] = file_children
             entry_files.append(file_node)
-    
+
     if entry_files:
         tree["children"].append({
             "name": "🚀 Точка входа",
@@ -555,13 +555,13 @@ def build_tree_data(classes, files, root_dir):
             "group": "other",
             "children": entry_files
         })
-    
+
     return tree
 
 
 def generate_html(tree_data, output_path):
     data_json = json.dumps(tree_data, ensure_ascii=False)
-    
+
     html = """<!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -835,7 +835,7 @@ window.addEventListener('resize', () => {
 </script>
 </body>
 </html>"""
-    
+
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"Сохранено: {os.path.abspath(output_path)}")
@@ -844,20 +844,20 @@ window.addEventListener('resize', () => {
 def main():
     root = sys.argv[1] if len(sys.argv) > 1 else "."
     output = sys.argv[2] if len(sys.argv) > 2 else "dwarf_tree.html"
-    
+
     if not os.path.isdir(root):
         print(f"Ошибка: {root} не является папкой")
         sys.exit(1)
-    
+
     print(f"Анализируем: {os.path.abspath(root)}")
     classes, files = analyze_repo(root)
     tree = build_tree_data(classes, files, root)
-    
+
     total_classes = len(classes)
     total_funcs = sum(len(f["functions"]) for f in files.values())
     print(f"  Классов: {total_classes}")
     print(f"  Функций: {total_funcs}")
-    
+
     generate_html(tree, output)
     print("Готово! Откройте файл в браузере.")
 

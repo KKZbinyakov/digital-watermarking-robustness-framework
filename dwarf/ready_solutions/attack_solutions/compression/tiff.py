@@ -1,4 +1,7 @@
-from ...utils.attack_utils import *
+"""Атака перекодирования в TIFF: сжатие без потерь, контрольная для нулевого BER."""
+
+from dwarf.core.attack_orchestrator.attack_core import Ready_Compression_Attacks
+from dwarf.ready_solutions.utils.attack_utils import roundtrip_buffer
 
 
 class Tiff(Ready_Compression_Attacks):
@@ -9,25 +12,21 @@ class Tiff(Ready_Compression_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
-        Перекодирует изображение в TIFF и сохраняет результат.
+        Перекодирует изображение в TIFF.
 
         Args:
             args (dict): параметры атаки
-                input_data (str): путь к исходному изображению
-                output_data (str): путь для сохранения результата
+                input_image (np.ndarray): матрица изображения
                 compression (str): 'tiff_lzw' или 'tiff_adobe_deflate' (по умолчанию 'tiff_lzw')
 
         Returns:
-            None
+            np.ndarray: матрица изображения после атаки
         """
-        input_data = args["input_data"]
-        output_data = args["output_data"]
-        compression = args.get("compression", "tiff_lzw")
+        defaults = {"input_image": None, "compression": "tiff_lzw"}
+        args = {**defaults, **args}
+        input_image = args["input_image"]
+        compression = args["compression"]
 
-        img = Image.open(input_data).convert("RGB")
-        roundtrip_buffer(img, "TIFF", compression=compression).save(output_data)
+        return roundtrip_buffer(input_image, "TIFF", compression=compression)

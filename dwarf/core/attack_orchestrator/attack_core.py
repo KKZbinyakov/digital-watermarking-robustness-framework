@@ -1,12 +1,13 @@
-from dwarf.core.utils.utils import *
+from abc import ABC, ABCMeta, abstractmethod
 
-class Attack_Core_Meta(abc.ABCMeta):
-    def __getattr__(cls, name: str): 
+
+class Attack_Core_Meta(ABCMeta):
+    def __getattr__(cls, name: str):
         if name in cls._registered_attacks:
             return cls._registered_attacks[name]
         raise AttributeError(f"{cls.__name__} has no attribute {name}")
 
-class Attack_Core(abc.ABC, metaclass=Attack_Core_Meta):
+class Attack_Core(ABC, metaclass=Attack_Core_Meta):
     """
     Класс-оркестратор атак.
     От него наследуются все типы атак. От каждого типа атак наследуются классы конкретных атак.
@@ -15,16 +16,16 @@ class Attack_Core(abc.ABC, metaclass=Attack_Core_Meta):
         _registered_attacks (dict): Словарь, в котором хранятся все зарегистрированные атаки.
 
     Methods:
-        __init_subclass__(cls, **kwargs): 
+        __init_subclass__(cls, **kwargs):
             Регистрирует атаку в словаре _registered_attacks.
-        get_registered_attacks(): 
+        get_registered_attacks():
             Возвращает словарь _registered_attacks.
-        get_all_attacks(cls): 
+        get_all_attacks(cls):
             Возвращает все атаки, наследуемые от cls.
         attack(args: dict = {
             "input_data": None,
             "output_data": None
-        }): 
+        }):
             Абстрактный метод атак, который должен быть реализован в каждом подклассе.
 
     """
@@ -42,11 +43,8 @@ class Attack_Core(abc.ABC, metaclass=Attack_Core_Meta):
         return cls.__subclasses__()
 
     @staticmethod
-    @abc.abstractmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }): 
+    @abstractmethod
+    def attack(**args):
         pass
 
     def get_attack_class_by_name(attack_name: str):
@@ -55,7 +53,7 @@ class Attack_Core(abc.ABC, metaclass=Attack_Core_Meta):
     def use_attacks(attacks: dict):
         all_attacks = attacks.keys()
         for attack_name in all_attacks:
-            Attack_Core.get_attack_class_by_name(attack_name).attack(attacks[attack_name])
+            Attack_Core.get_attack_class_by_name(attack_name).attack(**attacks[attack_name])
 
 class Ready_Geometric_Attacks(Attack_Core):
     """

@@ -8,7 +8,8 @@ cimport cython
 cimport numpy as cnp
 from libc.math cimport floor
 
-from ...utils.attack_utils import *
+from dwarf.core.attack_orchestrator.attack_core import Ready_Color_Brightness_Attacks
+from dwarf.ready_solutions.utils.attack_utils import to_matrix
 
 cnp.import_array()
 
@@ -123,39 +124,41 @@ class Dithering(Ready_Color_Brightness_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
-        Применяет дизеринг к изображению и сохраняет результат.
+        Применяет дизеринг к изображению.
 
         Args:
             args (dict): параметры атаки
-                input_data (str): путь к исходному изображению
-                output_data (str): путь для сохранения результата
+                input_image (np.ndarray): матрица изображения
                 method (str): 'floyd_steinberg' или 'ordered' (по умолчанию 'floyd_steinberg')
                 levels (int): число уровней на канал, не меньше 2 (по умолчанию 2)
                 matrix_size (int): сторона матрицы Байера для 'ordered', степень двойки (по умолчанию 4)
 
         Returns:
-            None
+            np.ndarray: матрица изображения после атаки
 
         Raises:
             ValueError: если levels меньше 2, matrix_size меньше 2 или method неизвестен
         """
-        input_data = args["input_data"]
-        output_data = args["output_data"]
-        method = args.get("method", "floyd_steinberg")
-        cdef int levels = int(args.get("levels", 2))
-        cdef int matrix_size = int(args.get("matrix_size", 4))
+        defaults = {
+            "input_image": None,
+            "method": "floyd_steinberg",
+            "levels": 2,
+            "matrix_size": 4,
+        }
+        args = {**defaults, **args}
+        input_image = args["input_image"]
+        method = args["method"]
+        cdef int levels = int(args["levels"])
+        cdef int matrix_size = int(args["matrix_size"])
         cdef double[:, :, ::1] view
         cdef double[:, ::1] matrix_view
 
         if levels < 2:
-            raise ValueError(f"levels должен быть не меньше 2, получено {levels}")
+            raise ValueError(f"levels must be at least 2, got {levels}")
 
-        buffer = np.ascontiguousarray(load_rgb(input_data), dtype=np.float64)
+        buffer = np.ascontiguousarray(to_matrix(input_image), dtype=np.float64)
         view = buffer
 
         if method == "floyd_steinberg":
@@ -164,14 +167,14 @@ class Dithering(Ready_Color_Brightness_Attacks):
         elif method == "ordered":
             if matrix_size < 2:
                 raise ValueError(
-                    f"matrix_size должен быть не меньше 2, получено {matrix_size}"
+                    f"matrix_size must be at least 2, got {matrix_size}"
                 )
             matrix_view = _bayer_matrix(matrix_size)
             with nogil:
                 _ordered(view, matrix_view, levels)
         else:
             raise ValueError(
-                f"Неизвестный method={method!r}, ожидается 'floyd_steinberg' или 'ordered'"
+                f"unknown method={method!r}, expected 'floyd_steinberg' or 'ordered'"
             )
 
-        save_rgb(buffer, output_data)
+        return to_matrix(buffer)

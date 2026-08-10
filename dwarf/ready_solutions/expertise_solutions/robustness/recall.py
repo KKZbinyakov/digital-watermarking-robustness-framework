@@ -1,4 +1,7 @@
-from ...utils.expertise_utils import *
+"""Метрика Recall: доля найденных детектором помеченных изображений."""
+
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import confusion_counts
 
 
 class Recall(Ready_Robustness_Expertise):
@@ -7,10 +10,7 @@ class Recall(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "y_true": None,
-        "y_pred": None
-    }):
+    def expertise(**args):
         """
         Считает полноту бинарного детектора.
 
@@ -27,6 +27,8 @@ class Recall(Ready_Robustness_Expertise):
         Raises:
             ValueError: если формы меток не совпадают или массивы пусты
         """
+        defaults = {"y_true": None, "y_pred": None}
+        args = {**defaults, **args}
         true_positive, _, _, false_negative = confusion_counts(args["y_true"], args["y_pred"])
         actual = true_positive + false_negative
         return float(true_positive / actual) if actual else 0.0

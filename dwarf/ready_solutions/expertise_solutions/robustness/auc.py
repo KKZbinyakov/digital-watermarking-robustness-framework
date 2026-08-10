@@ -1,4 +1,9 @@
-from ...utils.expertise_utils import *
+"""Метрика AUC: площадь под ROC-кривой детектора ЦВЗ."""
+
+import numpy as np
+
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import avg_ranks
 
 
 class AUC(Ready_Robustness_Expertise):
@@ -7,10 +12,7 @@ class AUC(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "y_true": None,
-        "y_scores": None
-    }):
+    def expertise(**args):
         """
         Считает AUC через статистику Манна-Уитни.
 
@@ -28,12 +30,12 @@ class AUC(Ready_Robustness_Expertise):
         Raises:
             ValueError: если длины меток и оценок не совпадают
         """
+        defaults = {"y_true": None, "y_scores": None}
+        args = {**defaults, **args}
         y_true = np.asarray(args["y_true"])
         y_scores = np.asarray(args["y_scores"], dtype=float)
         if y_true.shape != y_scores.shape:
-            raise ValueError(
-                f"формы не совпадают: метки {y_true.shape}, оценки {y_scores.shape}"
-            )
+            raise ValueError(f"shapes differ: labels {y_true.shape}, scores {y_scores.shape}")
 
         positives = int((y_true == 1).sum())
         negatives = int((y_true == 0).sum())
@@ -41,5 +43,4 @@ class AUC(Ready_Robustness_Expertise):
             return float("nan")
 
         ranks = avg_ranks(y_scores)
-        return float((ranks[y_true == 1].sum() - positives * (positives + 1) / 2)
-                     / (positives * negatives))
+        return float((ranks[y_true == 1].sum() - positives * (positives + 1) / 2) / (positives * negatives))

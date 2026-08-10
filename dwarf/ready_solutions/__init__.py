@@ -1,14 +1,8 @@
-from dwarf.common_utils.common_utils import *
+"""Импорт пакета наполняет реестры ядра всеми готовыми решениями."""
 
-READY_DIR = Path(__file__).resolve().parent
+import dwarf.ready_solutions.attack_solutions as attack_solutions
+import dwarf.ready_solutions.ds_solutions as ds_solutions
+import dwarf.ready_solutions.embedding_solutions as embedding_solutions
+import dwarf.ready_solutions.expertise_solutions as expertise_solutions
 
-from .embedding_solutions import *
-from .attack_solutions import *
-from .expertise_solutions import *
-from .ds_solutions import *
-
-# from .utils.utils import *
-# from .attack_solutions.attack_solutions import Ready_Attacks
-# from .ds_solutions.ds_solutions import Ready_Datasets
-# from .expertise_solutions.expertise_solutions import  Ready_Expertise
-# from .embedding_solutions.embedding_solutions import Ready_Embeddings
+__all__ = ["attack_solutions", "ds_solutions", "embedding_solutions", "expertise_solutions"]

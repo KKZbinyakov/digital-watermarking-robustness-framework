@@ -5,7 +5,10 @@ import numpy as np
 cimport cython
 cimport numpy as cnp
 
-from ...utils.attack_utils import *
+from PIL import Image
+
+from dwarf.core.attack_orchestrator.attack_core import Ready_Color_Brightness_Attacks
+from dwarf.ready_solutions.utils.attack_utils import to_array, to_matrix, to_pil
 
 cnp.import_array()
 
@@ -131,12 +134,9 @@ class Color_Quantization(Ready_Color_Brightness_Attacks):
     """
 
     @staticmethod
-    def attack(args: dict = {
-        "input_data": None,
-        "output_data": None
-    }):
+    def attack(**args):
         """
-        Уменьшает число цветов изображения и сохраняет результат.
+        Уменьшает число цветов изображения.
 
         Палитра k-means обучается на случайной выборке пикселей: на полном кадре
         качество палитры уже не растёт, а время обучения растёт линейно по числу
@@ -144,8 +144,7 @@ class Color_Quantization(Ready_Color_Brightness_Attacks):
 
         Args:
             args (dict): параметры атаки
-                input_data (str): путь к исходному изображению
-                output_data (str): путь для сохранения результата
+                input_image (np.ndarray): матрица изображения
                 colors (int): число цветов в палитре, не меньше 2 (по умолчанию 16)
                 method (str): 'median_cut' или 'kmeans' (по умолчанию 'median_cut')
                 sample_size (int): размер выборки для обучения k-means (по умолчанию 5000)
@@ -153,41 +152,47 @@ class Color_Quantization(Ready_Color_Brightness_Attacks):
                 seed (int): зерно генератора случайных чисел для k-means (по умолчанию None)
 
         Returns:
-            None
+            np.ndarray: матрица изображения после атаки
 
         Raises:
             ValueError: если colors меньше 2, colors больше размера выборки или method неизвестен
         """
-        input_data = args["input_data"]
-        output_data = args["output_data"]
-        method = args.get("method", "median_cut")
-        cdef int colors = int(args.get("colors", 16))
-        cdef int iterations = int(args.get("iterations", 10))
-        sample_size = int(args.get("sample_size", 5000))
-        seed = args.get("seed", None)
+        defaults = {
+            "input_image": None,
+            "colors": 16,
+            "method": "median_cut",
+            "sample_size": 5000,
+            "iterations": 10,
+            "seed": None,
+        }
+        args = {**defaults, **args}
+        input_image = args["input_image"]
+        method = args["method"]
+        cdef int colors = int(args["colors"])
+        cdef int iterations = int(args["iterations"])
+        sample_size = int(args["sample_size"])
+        seed = args["seed"]
 
         if colors < 2:
-            raise ValueError(f"colors должен быть не меньше 2, получено {colors}")
+            raise ValueError(f"colors must be at least 2, got {colors}")
 
         if method == "median_cut":
-            img = Image.open(input_data).convert("RGB")
-            img.quantize(colors=colors, method=Image.MEDIANCUT).convert("RGB").save(output_data)
-            return
+            return to_array(to_pil(input_image).quantize(colors=colors, method=Image.MEDIANCUT))
 
         if method != "kmeans":
             raise ValueError(
-                f"Неизвестный method={method!r}, ожидается 'median_cut' или 'kmeans'"
+                f"unknown method={method!r}, expected 'median_cut' or 'kmeans'"
             )
 
         rng = np.random.default_rng(seed)
-        array = load_rgb(input_data)
+        array = to_matrix(input_image)
         pixels_array = np.ascontiguousarray(array.reshape(-1, 3), dtype=np.float64)
 
         taken = min(sample_size, pixels_array.shape[0])
         if colors > taken:
             raise ValueError(
-                f"colors={colors} больше доступной выборки ({taken} пикселей): "
-                f"увеличьте sample_size или уменьшите colors"
+                f"colors={colors} exceeds the available sample ({taken} pixels): "
+                f"increase sample_size or decrease colors"
             )
 
         sample_array = np.ascontiguousarray(
@@ -206,4 +211,4 @@ class Color_Quantization(Ready_Color_Brightness_Attacks):
         with nogil:
             _assign(pixels, centers, labels)
 
-        save_rgb(centers_array[labels_array].reshape(array.shape), output_data)
+        return to_matrix(centers_array[labels_array].reshape(array.shape))

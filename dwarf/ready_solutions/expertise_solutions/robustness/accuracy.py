@@ -1,4 +1,7 @@
-from ...utils.expertise_utils import *
+"""Метрика Accuracy: доля верных решений бинарного детектора ЦВЗ."""
+
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Robustness_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import confusion_counts
 
 
 class Accuracy(Ready_Robustness_Expertise):
@@ -7,10 +10,7 @@ class Accuracy(Ready_Robustness_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "y_true": None,
-        "y_pred": None
-    }):
+    def expertise(**args):
         """
         Считает долю совпадений предсказанных меток с истинными.
 
@@ -25,8 +25,8 @@ class Accuracy(Ready_Robustness_Expertise):
         Raises:
             ValueError: если формы меток не совпадают или массивы пусты
         """
-        true_positive, true_negative, false_positive, false_negative = confusion_counts(
-            args["y_true"], args["y_pred"]
-        )
+        defaults = {"y_true": None, "y_pred": None}
+        args = {**defaults, **args}
+        true_positive, true_negative, false_positive, false_negative = confusion_counts(args["y_true"], args["y_pred"])
         total = true_positive + true_negative + false_positive + false_negative
         return float((true_positive + true_negative) / total)

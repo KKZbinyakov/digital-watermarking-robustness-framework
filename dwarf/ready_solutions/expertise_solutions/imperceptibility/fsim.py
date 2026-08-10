@@ -1,4 +1,9 @@
-from ...utils.expertise_utils import *
+"""Метрика FSIM: индекс сходства признаков по яркостной составляющей."""
+
+import numpy as np
+
+from dwarf.core.expertise_orchestrator.expertise_core import Ready_Imperceptibility_Expertise
+from dwarf.ready_solutions.utils.expertise_utils import downsample, fsim_luma_maps, to_gray
 
 
 class FSIM(Ready_Imperceptibility_Expertise):
@@ -12,10 +17,7 @@ class FSIM(Ready_Imperceptibility_Expertise):
     """
 
     @staticmethod
-    def expertise(args: dict = {
-        "original_path": None,
-        "distorted_path": None
-    }):
+    def expertise(**args):
         """
         Считает FSIM между двумя изображениями.
 
@@ -25,14 +27,16 @@ class FSIM(Ready_Imperceptibility_Expertise):
 
         Args:
             args (dict): параметры метрики
-                original_path (str): путь к оригинальному изображению
-                distorted_path (str): путь к изображению со встроенным ЦВЗ или после атаки
+                original_image (np.ndarray): матрица оригинального изображения
+                distorted_image (np.ndarray): матрица изображения со встроенным ЦВЗ или после атаки
 
         Returns:
             float: значение FSIM, единица при полном совпадении
         """
-        original_luma, _, _ = rgb_to_yiq(load_rgb_float(args["original_path"]))
-        distorted_luma, _, _ = rgb_to_yiq(load_rgb_float(args["distorted_path"]))
+        defaults = {"original_image": None, "distorted_image": None}
+        args = {**defaults, **args}
+        original_luma = to_gray(args["original_image"])
+        distorted_luma = to_gray(args["distorted_image"])
 
         factor = max(1, int(round(min(original_luma.shape) / 256)))
         original_luma = downsample(original_luma, factor)
