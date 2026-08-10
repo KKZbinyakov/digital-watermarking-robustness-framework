@@ -9,7 +9,7 @@ cimport numpy as cnp
 from libc.math cimport fabs
 
 from dwarf.core.embedding_orchestrator.embedding_core import Ready_Frequency_Embeddings
-from dwarf.ready_solutions.utils.embedding_utils_pxd cimport (
+from dwarf.ready_solutions.utils.embedding_utils_pyx cimport (
     init_filters, init_offsets, contourlet_decompose, contourlet_reconstruct
 )
 

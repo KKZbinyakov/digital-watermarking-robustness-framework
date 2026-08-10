@@ -8,7 +8,7 @@ cimport numpy as cnp
 from libc.math cimport fabs
 
 from dwarf.core.embedding_orchestrator.embedding_core import Ready_Frequency_Embeddings
-from dwarf.ready_solutions.utils.embedding_utils_pxd cimport init_dct_matrix, apply_dct_8x8, apply_idct_8x8, DBlock
+from dwarf.ready_solutions.utils.embedding_utils_pyx cimport init_dct_matrix, apply_dct_8x8, apply_idct_8x8, DBlock
 
 cnp.import_array()
 
