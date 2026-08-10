@@ -127,7 +127,7 @@ cdef void get_wavelet_filters(char* name, double* h, double* g, int* L):
         g[4] =  0.8037387518059161; g[5] = -0.4976186676323012
         g[6] = -0.0296355276459985; g[7] =  0.0757657147893432
     else:
-        raise ValueError(f"Неизвестный вейвлет: {name}")
+        raise ValueError(f"Unknown wavelet: {name}")
 
 cdef inline void dwt_1d_haar(const double* x, double* a, double* d, int n):
     """
@@ -1227,12 +1227,11 @@ def dfb_analysis(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] band, int levels):
     cdef int N = band.shape[1]
 
     if N % 2 != 0:
-        raise ValueError(f"Ширина {N} не делится на 2: невозможно продолжить DFB.")
+        raise ValueError(f"Width {N} is not divided by 2: DFB cannot be continued.")
     if M % N != 0:
         raise ValueError(
-            f"Форма {M}x{N}: требуется, чтобы N делило M (условие обратимости "
-            f"решёточного представления квинканс-косета). Используйте квадратное "
-            f"изображение со стороной, кратной 2^(n_levels + dfb_levels).")
+            f"It is required for length M to be divided by width N."
+            f"Both M and N need to be divided by 2^(n_levels + dfb_levels).")
 
     init_offsets()
 
@@ -1309,10 +1308,10 @@ cpdef contourlet_decompose(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] image,
     cdef int need = 1 << n_levels
 
     if n_levels < 1:
-        raise ValueError("n_levels должно быть >= 1.")
+        raise ValueError("n_levels must be >= 1.")
     if H % need != 0 or W % need != 0:
         raise ValueError(
-            f"Размер {W}x{H} не кратен 2^n_levels = {need}. Обрежьте изображение.")
+            f"Size {W}x{H} is not divided by 2^n_levels = {need}.")
 
     cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] cur = image
     bands = []

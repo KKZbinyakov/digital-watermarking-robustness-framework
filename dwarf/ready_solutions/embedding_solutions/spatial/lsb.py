@@ -26,7 +26,7 @@ class LSB(Ready_Spatial_Embeddings):
         max_len = len(flat)
         if len(bits) > max_len:
             bits = bits[:max_len]
-            print(f"Предупреждение: ЦВЗ слишком длинный, обрезан до {max_len} бит")
+            print(f"Warning: watermark too long, cut to {max_len} bits")
 
         flat[: len(bits)] = (flat[: len(bits)] & 0xFE) | bits
         output_image = flat.reshape(data.shape)

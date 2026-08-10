@@ -170,7 +170,7 @@ class DWTSVD(Ready_Frequency_Embeddings):
             image = kwargs.get("image_path")
         watermark = kwargs.get("watermark_bits")
         if image is None or watermark is None:
-            raise ValueError("Не переданы input_image/image_path или watermark_bits")
+            raise ValueError("input_image/image_path or watermark_bits not given")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
@@ -182,7 +182,7 @@ class DWTSVD(Ready_Frequency_Embeddings):
         cdef int W = img_c.shape[1]
 
         if block_size != 2 * N_SVD:
-            raise ValueError(f"block_size должен быть равен {2 * N_SVD}")
+            raise ValueError(f"block_size must be {2 * N_SVD}")
 
         cdef int blocks_h = H // block_size
         cdef int blocks_w = W // block_size
@@ -191,8 +191,7 @@ class DWTSVD(Ready_Frequency_Embeddings):
 
         if wm_len > capacity:
             raise ValueError(
-                f"Не хватает ёмкости: нужно {wm_len} блоков, доступно {capacity}. "
-                f"Уменьшите длину ЦВЗ или увеличьте размер изображения."
+                f"Not enough capacity: needed {wm_len} blocks, available {capacity}."
             )
 
         cdef double h_buf[32]
@@ -254,7 +253,7 @@ class DWTSVD(Ready_Frequency_Embeddings):
             image = kwargs.get("image_path")
         num_bits = kwargs.get("num_bits")
         if image is None or not num_bits:
-            raise ValueError("Не переданы input_image/image_path или num_bits")
+            raise ValueError("input_image/image_path or watermark_bits not given")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef int wm_length = num_bits
@@ -266,14 +265,14 @@ class DWTSVD(Ready_Frequency_Embeddings):
         cdef int W = img_c.shape[1]
 
         if block_size != 2 * N_SVD:
-            raise ValueError(f"block_size должен быть равен {2 * N_SVD}")
+            raise ValueError(f"block_size must be {2 * N_SVD}")
 
         cdef int blocks_h = H // block_size
         cdef int blocks_w = W // block_size
         cdef int capacity = blocks_h * blocks_w
 
         if wm_length > capacity:
-            raise ValueError(f"wm_length превышает число блоков.")
+            raise ValueError(f"wm_length is more than the number of blocks.")
 
         cdef double h_buf[32]
         cdef double g_buf[32]

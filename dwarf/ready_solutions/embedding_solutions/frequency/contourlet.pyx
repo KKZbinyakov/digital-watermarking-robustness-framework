@@ -136,8 +136,8 @@ def _embed_core(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] image,
             cap = capacity(h, w, block, n_sub)
             if wm_len > cap:
                 raise ValueError(
-                    f"Задано {wm_len} бит, но ёмкость масштаба {sc} только {cap} бит "
-                    f"({n_sub} поддиапазонов {h}x{w}, блок {block}x{block}).")
+                    f"Given {wm_len} bits, but capacity of the scale {sc} is only {cap} bits"
+                    f"({n_sub} subbands {h}x{w}, block {block}x{block}).")
 
         for s_i in range(n_sub):
             S = subbands[s_i]
@@ -166,7 +166,7 @@ def _extract_core(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] image,
 
     if wm_length > cap:
         raise ValueError(
-            f"Задано {wm_length} бит, но ёмкость масштаба {sc} только {cap} бит.")
+            f"Given {wm_length} bits, but capacity of the scale {sc} is only {cap} bits.")
 
     cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] extracted_wm = np.zeros(
         wm_length, dtype=np.int32)
@@ -210,7 +210,7 @@ class Contourlet(Ready_Frequency_Embeddings):
         watermark = kwargs.get("watermark_bits")
         
         if image is None or watermark is None:
-            raise ValueError("Не переданы input_image/image_path или watermark_bits")
+            raise ValueError("input_image/image_path or watermark_bits not given")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
@@ -227,11 +227,11 @@ class Contourlet(Ready_Frequency_Embeddings):
         
         cdef int sc = n_levels - 1 if scale < 0 else scale
         if sc < 0 or sc >= n_levels:
-            raise ValueError(f"scale={sc} вне диапазона [0, {n_levels - 1}].")
+            raise ValueError(f"scale={sc} out of range [0, {n_levels - 1}].")
         if block < 4:
-            raise ValueError("block должен быть >= 4.")
+            raise ValueError("block must be >= 4.")
         if iterations < 1:
-            raise ValueError("iterations должно быть >= 1.")
+            raise ValueError("iterations must be >= 1.")
             
         return _embed_core(img_c, wm_c, margin, n_levels, dfb_levels, sc, block, iterations)
 
@@ -260,7 +260,7 @@ class Contourlet(Ready_Frequency_Embeddings):
         num_bits = kwargs.get("num_bits")
         
         if image is None or not num_bits:
-            raise ValueError("Не переданы input_image/image_path или num_bits")
+            raise ValueError("input_image/image_path or num_bits not given")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef int wm_length = num_bits
@@ -275,8 +275,8 @@ class Contourlet(Ready_Frequency_Embeddings):
         
         cdef int sc = n_levels - 1 if scale < 0 else scale
         if sc < 0 or sc >= n_levels:
-            raise ValueError(f"scale={sc} вне диапазона [0, {n_levels - 1}].")
+            raise ValueError(f"scale={sc} out of range [0, {n_levels - 1}].")
         if block < 4:
-            raise ValueError("block должен быть >= 4.")
+            raise ValueError("block must be >= 4.")
             
         return _extract_core(img_c, wm_length, n_levels, dfb_levels, sc, block)

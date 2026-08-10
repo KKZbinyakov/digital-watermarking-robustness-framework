@@ -133,7 +133,7 @@ class DCT(Ready_Frequency_Embeddings):
         watermark = kwargs.get("watermark_bits")
         
         if image is None or watermark is None:
-            raise ValueError("Не переданы input_image/image_path или watermark_bits")
+            raise ValueError("input_image/image_path or watermark_bits not given")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
@@ -173,7 +173,7 @@ class DCT(Ready_Frequency_Embeddings):
         num_bits = kwargs.get("num_bits")
         
         if image is None or not num_bits:
-            raise ValueError("Не переданы input_image/image_path или num_bits")
+            raise ValueError("input_image/image_path or num_bits not given")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef double threshold = kwargs["threshold"]

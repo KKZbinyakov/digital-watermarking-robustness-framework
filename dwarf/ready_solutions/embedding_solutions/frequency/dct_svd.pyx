@@ -141,7 +141,7 @@ class DCT_SVD(Ready_Frequency_Embeddings):
             image = kwargs.get("image_path")
         watermark = kwargs.get("watermark_bits")
         if image is None or watermark is None:
-            raise ValueError("Не переданы input_image/image_path или watermark_bits")
+            raise ValueError("input_image/image_path or watermark_bits not given")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
@@ -157,8 +157,7 @@ class DCT_SVD(Ready_Frequency_Embeddings):
 
         if wm_len > capacity:
             raise ValueError(
-                f"Не хватает ёмкости: нужно {wm_len} блоков, доступно {capacity}. "
-                f"Уменьшите длину ЦВЗ или увеличьте размер изображения."
+                f"Not enough capacity: neede {wm_len} blocks, available {capacity}."
             )
 
         init_dct_matrix()
@@ -192,7 +191,7 @@ class DCT_SVD(Ready_Frequency_Embeddings):
             image = kwargs.get("image_path")
         num_bits = kwargs.get("num_bits")
         if image is None or not num_bits:
-            raise ValueError("Не переданы input_image/image_path или num_bits")
+            raise ValueError("input_image/image_path or num_bits not given")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef int wm_length = num_bits
@@ -206,7 +205,7 @@ class DCT_SVD(Ready_Frequency_Embeddings):
         cdef int capacity = blocks_h * blocks_w
 
         if wm_length > capacity:
-            raise ValueError(f"wm_length превышает число блоков 8x8.")
+            raise ValueError(f"wm_length is more than the number of blocks 8x8.")
 
         init_dct_matrix()
 

@@ -145,7 +145,7 @@ class DFT(Ready_Frequency_Embeddings):
         watermark = kwargs.get("watermark_bits")
         
         if image is None or watermark is None:
-            raise ValueError("Не переданы input_image/image_path или watermark_bits")
+            raise ValueError("input_image/image_path or watermark_bits not given")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
@@ -164,11 +164,11 @@ class DFT(Ready_Frequency_Embeddings):
         cdef int L = wm_c.shape[0]
         
         if L <= 0:
-            raise ValueError("Пустой водяной знак")
+            raise ValueError("Empty watermark")
         if not (0.0 < r_min < r_max < 0.5):
-            raise ValueError("Требуется 0 < r_min < r_max < 0.5")
+            raise ValueError("Needed 0 < r_min < r_max < 0.5")
         if n_rho < 1:
-            raise ValueError("n_rho должно быть >= 1")
+            raise ValueError("n_rho must be >= 1")
             
         cdef int n_sec = n_sync + L
         cdef int n_theta = 2 * n_sec
@@ -226,7 +226,7 @@ class DFT(Ready_Frequency_Embeddings):
         num_bits = kwargs.get("num_bits")
         
         if image is None or not num_bits:
-            raise ValueError("Не переданы input_image/image_path или num_bits")
+            raise ValueError("input_image/image_path or watermark_bits not given")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef int wm_length = num_bits
@@ -245,7 +245,7 @@ class DFT(Ready_Frequency_Embeddings):
         cdef int n_fine = 2 * n_sec * OS
 
         if OS < 1:
-            raise ValueError("oversampling должно быть >= 1")
+            raise ValueError("oversampling must be >= 1")
 
         cdef cnp.ndarray[cnp.complex128_t, ndim=2, mode='c'] F = \
             np.ascontiguousarray(np.fft.fft2(img_c), dtype=np.complex128)
