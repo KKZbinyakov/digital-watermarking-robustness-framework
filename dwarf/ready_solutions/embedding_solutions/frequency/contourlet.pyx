@@ -211,6 +211,8 @@ class Contourlet(Ready_Frequency_Embeddings):
         args = {**defaults, **args}
         image = args["input_image"]
         watermark = args["watermark_bits"]
+        if image is None or watermark is None:
+            raise ValueError("input_image/image_path or watermark_bits not given")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
@@ -259,6 +261,8 @@ class Contourlet(Ready_Frequency_Embeddings):
         args = {**defaults, **args}
         image = args["input_image"]
         num_bits = args["num_bits"]
+        if image is None or num_bits is None:
+            raise ValueError("input_image/image_path or num_bits not given")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef int wm_length = num_bits

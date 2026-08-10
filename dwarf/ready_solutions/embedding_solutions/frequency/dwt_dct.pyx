@@ -182,27 +182,25 @@ class DWTDCT(Ready_Frequency_Embeddings):
         :return output_image: матрица изображения с встроенным ЦВЗ.
         """
         defaults = {
-            "input_image": None,
-            "watermark_bits": None,
-            "block_size": 16,
-            "margin": 150.0,
-            "threshold": 25.0,
-            "wavelet_name": "haar"
-        }
-        kwargs = {**defaults, **args}
-        image = kwargs.get("input_image")
-        if image is None:
-            image = kwargs.get("image_path")
-        watermark = kwargs.get("watermark_bits")
+                    "input_image": None,
+                    "watermark_bits": None,
+                    "block_size": 16,
+                    "margin": 150.0,
+                    "threshold": 25.0,
+                    "wavelet_name": "haar"
+                }
+        args = {**defaults, **args}
+        image = args.get["input_image"]
+        watermark = args.get["watermark_bits"]
         if image is None or watermark is None:
             raise ValueError("input_image/image_path or watermark_bits not given")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
-        cdef int block_size = kwargs["block_size"]
-        cdef double margin = kwargs["margin"]
-        cdef double threshold = kwargs["threshold"]
-        cdef bytes wavelet_name = kwargs["wavelet_name"].encode('utf-8')
+        cdef int block_size = int(args["block_size"])
+        cdef double margin = args["margin"]
+        cdef double threshold = args["threshold"]
+        cdef bytes wavelet_name = args["wavelet_name"].encode('utf-8')
 
         cdef int H = img_c.shape[0]
         cdef int W = img_c.shape[1]
@@ -269,25 +267,23 @@ class DWTDCT(Ready_Frequency_Embeddings):
         :return extracted_wm: извлечённый ЦВЗ.
         """
         defaults = {
-            "input_image": None,
-            "num_bits": 0,
-            "block_size": 16,
-            "threshold": 25.0,
-            "wavelet_name": "haar"
-        }
-        kwargs = {**defaults, **args}
-        image = kwargs.get("input_image")
-        if image is None:
-            image = kwargs.get("image_path")
-        num_bits = kwargs.get("num_bits")
+                    "input_image": None,
+                    "num_bits": 0,
+                    "block_size": 16,
+                    "threshold": 25.0,
+                    "wavelet_name": "haar"
+                }
+        args = {**defaults, **args}
+        image = args.get["input_image"]
+        num_bits = args.get["num_bits"]
         if image is None or not num_bits:
             raise ValueError("input_image/image_path or watermark_bits not given")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef int wm_length = num_bits
-        cdef int block_size = kwargs["block_size"]
-        cdef double threshold = kwargs["threshold"]
-        cdef bytes wavelet_name = kwargs["wavelet_name"].encode('utf-8')
+        cdef int block_size = int(args["block_size"])
+        cdef double threshold = args["threshold"]
+        cdef bytes wavelet_name = args["wavelet_name"].encode('utf-8')
 
         cdef int H = img_c.shape[0]
         cdef int W = img_c.shape[1]

@@ -126,23 +126,21 @@ class DFT(Ready_Frequency_Embeddings):
         :return output_image: матрица изображения с встроенным ЦВЗ.
         """
         defaults = {
-            "input_image": None,
-            "watermark_bits": None,
-            "margin": 0.40,
-            "n_rho": 4,
-            "r_min": 0.10,
-            "r_max": 0.42,
-            "n_sync": 13,
-            "sync_boost": 1.5,
-            "n_iter": 3,
-            "max_gain": 3.0
-        }
-        kwargs = {**defaults, **args}
+                    "input_image": None,
+                    "watermark_bits": None,
+                    "margin": 0.40,
+                    "n_rho": 4,
+                    "r_min": 0.10,
+                    "r_max": 0.42,
+                    "n_sync": 13,
+                    "sync_boost": 1.5,
+                    "n_iter": 3,
+                    "max_gain": 3.0
+                }
+        args = {**defaults, **args}
         
-        image = kwargs.get("input_image")
-        if image is None:
-            image = kwargs.get("image_path")
-        watermark = kwargs.get("watermark_bits")
+        image = args.get["input_image"]
+        watermark = args.get["watermark_bits"]
         
         if image is None or watermark is None:
             raise ValueError("input_image/image_path or watermark_bits not given")
@@ -150,14 +148,14 @@ class DFT(Ready_Frequency_Embeddings):
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
         
-        cdef double margin = kwargs["margin"]
-        cdef int n_rho = kwargs["n_rho"]
-        cdef double r_min = kwargs["r_min"]
-        cdef double r_max = kwargs["r_max"]
-        cdef int n_sync = kwargs["n_sync"]
-        cdef double sync_boost = kwargs["sync_boost"]
-        cdef int n_iter = kwargs["n_iter"]
-        cdef double max_gain = kwargs["max_gain"]
+        cdef double margin = args["margin"]
+        cdef int n_rho = int(args["n_rho"])
+        cdef double r_min = args["r_min"]
+        cdef double r_max = args["r_max"]
+        cdef int n_sync = int(args["n_sync"])
+        cdef double sync_boost = args["sync_boost"]
+        cdef int n_iter = int(args["n_iter"])
+        cdef double max_gain = args["max_gain"]
         
         cdef int H = img_c.shape[0]
         cdef int W = img_c.shape[1]
@@ -209,21 +207,19 @@ class DFT(Ready_Frequency_Embeddings):
         :return extracted_wm: извлечённый ЦВЗ.
         """
         defaults = {
-            "input_image": None,
-            "num_bits": 0,
-            "n_rho": 4,
-            "r_min": 0.10,
-            "r_max": 0.42,
-            "n_sync": 13,
-            "search_rotation": True,
-            "oversampling": 4
-        }
-        kwargs = {**defaults, **args}
+                    "input_image": None,
+                    "num_bits": 0,
+                    "n_rho": 4,
+                    "r_min": 0.10,
+                    "r_max": 0.42,
+                    "n_sync": 13,
+                    "search_rotation": True,
+                    "oversampling": 4
+                }
+        args = {**defaults, **args}
         
-        image = kwargs.get("input_image")
-        if image is None:
-            image = kwargs.get("image_path")
-        num_bits = kwargs.get("num_bits")
+        image = args.get["input_image"]
+        num_bits = args.get["num_bits"]
         
         if image is None or not num_bits:
             raise ValueError("input_image/image_path or watermark_bits not given")
@@ -231,12 +227,12 @@ class DFT(Ready_Frequency_Embeddings):
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef int wm_length = num_bits
         
-        cdef int n_rho = kwargs["n_rho"]
-        cdef double r_min = kwargs["r_min"]
-        cdef double r_max = kwargs["r_max"]
-        cdef int n_sync = kwargs["n_sync"]
-        cdef bint search_rotation = kwargs["search_rotation"]
-        cdef int oversampling = kwargs["oversampling"]
+        cdef int n_rho = int(args["n_rho"])
+        cdef double r_min = args["r_min"]
+        cdef double r_max = args["r_max"]
+        cdef int n_sync = int(args["n_sync"])
+        cdef bint search_rotation = args["search_rotation"]
+        cdef int oversampling = int(args["oversampling"])
         
         cdef int H = img_c.shape[0]
         cdef int W = img_c.shape[1]
