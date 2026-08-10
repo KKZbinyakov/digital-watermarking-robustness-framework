@@ -4,6 +4,9 @@ cimport numpy as cnp
 from libc.string cimport memcpy
 cnp.import_array()
 import warnings
+from dwarf.ready_solutions.utils.embedding_utils_pxd cimport (
+    N_SVD, NN_SVD, MAX_SWEEPS, MAX_POWER_ITER
+)
 
 
 cdef double _C_DCT[8][8]

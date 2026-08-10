@@ -9,7 +9,7 @@ cimport numpy as cnp
 from libc.math cimport log
 
 from dwarf.core.embedding_orchestrator.embedding_core import Ready_Frequency_Embeddings
-from dwarf.ready_solutions.utils.embedding_utils cimport (
+from dwarf.ready_solutions.utils.embedding_utils_pxd cimport (
     build_cell_map, cell_mean_sync, apply_gain
 )
 

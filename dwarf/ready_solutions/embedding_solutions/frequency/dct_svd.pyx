@@ -7,7 +7,7 @@ import numpy as np
 cimport numpy as cnp
 
 from dwarf.core.embedding_orchestrator.embedding_core import Ready_Frequency_Embeddings
-from dwarf.ready_solutions.utils.embedding_utils cimport (
+from dwarf.ready_solutions.utils.embedding_utils_pxd cimport (
     init_dct_matrix, apply_dct_8x8, apply_idct_8x8, DBlock,
     power_iteration, power_iteration_sigma,
     qim_embed, qim_extract,

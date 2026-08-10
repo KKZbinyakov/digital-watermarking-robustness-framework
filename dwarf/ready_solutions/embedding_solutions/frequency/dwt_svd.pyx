@@ -7,7 +7,7 @@ import numpy as np
 cimport numpy as cnp
 
 from dwarf.core.embedding_orchestrator.embedding_core import Ready_Frequency_Embeddings
-from dwarf.ready_solutions.utils.embedding_utils cimport (
+from dwarf.ready_solutions.utils.embedding_utils_pxd cimport (
     get_wavelet_filters, dwt_2d_block, idwt_2d_block,
     power_iteration, power_iteration_sigma,
     qim_embed, qim_extract,
