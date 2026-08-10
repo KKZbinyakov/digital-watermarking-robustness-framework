@@ -215,7 +215,7 @@ class Contourlet(Ready_Frequency_Embeddings):
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
         
-        cdef double margin = double(args["margin"])
+        cdef double margin = args["margin"]
         cdef int n_levels = int(args["n_levels"])
         cdef int dfb_levels = int(args["dfb_levels"])
         cdef int scale = int(args["scale"])
