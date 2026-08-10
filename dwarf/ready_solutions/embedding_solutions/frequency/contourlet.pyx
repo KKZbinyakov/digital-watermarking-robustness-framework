@@ -199,28 +199,28 @@ class Contourlet(Ready_Frequency_Embeddings):
         :return output_image: матрица изображения с встроенным ЦВЗ.
         """
         defaults = {
-            "input_image": None, "watermark_bits": None, "margin": 24.0,
-            "n_levels": 2, "dfb_levels": 2, "scale": -1, "block": 4, "iterations": 3
-        }
-        kwargs = {**defaults, **args}
-        
-        image = kwargs.get("input_image")
-        if image is None:
-            image = kwargs.get("image_path")
-        watermark = kwargs.get("watermark_bits")
-        
-        if image is None or watermark is None:
-            raise ValueError("input_image/image_path or watermark_bits not given")
+                    "input_image": None,
+                    "watermark_bits": None,
+                    "margin": 24.0,
+                    "n_levels": 2,
+                    "dfb_levels": 2,
+                    "scale": -1,
+                    "block": 4,
+                    "iterations": 3
+                }
+        args = {**defaults, **args}
+        image = args["input_image"]
+        watermark = args["watermark_bits"]
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
         
-        cdef double margin = kwargs["margin"]
-        cdef int n_levels = kwargs["n_levels"]
-        cdef int dfb_levels = kwargs["dfb_levels"]
-        cdef int scale = kwargs["scale"]
-        cdef int block = kwargs["block"]
-        cdef int iterations = kwargs["iterations"]
+        cdef double margin = double(args["margin"])
+        cdef int n_levels = int(args["n_levels"])
+        cdef int dfb_levels = int(args["dfb_levels"])
+        cdef int scale = int(args["scale"])
+        cdef int block = int(args["block"])
+        cdef int iterations = int(args["iterations"])
         
         init_filters()
         init_offsets()
@@ -249,26 +249,24 @@ class Contourlet(Ready_Frequency_Embeddings):
         :return extracted_wm: извлечённые биты ЦВЗ.
         """
         defaults = {
-            "input_image": None, "num_bits": 0, "n_levels": 2,
-            "dfb_levels": 2, "scale": -1, "block": 4
-        }
-        kwargs = {**defaults, **args}
-        
-        image = kwargs.get("input_image")
-        if image is None:
-            image = kwargs.get("image_path")
-        num_bits = kwargs.get("num_bits")
-        
-        if image is None or not num_bits:
-            raise ValueError("input_image/image_path or num_bits not given")
+                    "input_image": None,
+                    "num_bits": 0,
+                    "n_levels": 2,
+                    "dfb_levels": 2,
+                    "scale": -1,
+                    "block": 4
+                }
+        args = {**defaults, **args}
+        image = args["input_image"]
+        num_bits = args["num_bits"]
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef int wm_length = num_bits
         
-        cdef int n_levels = kwargs["n_levels"]
-        cdef int dfb_levels = kwargs["dfb_levels"]
-        cdef int scale = kwargs["scale"]
-        cdef int block = kwargs["block"]
+        cdef int n_levels = int(args["n_levels"])
+        cdef int dfb_levels = int(args["dfb_levels"])
+        cdef int scale = int(args["scale"])
+        cdef int block = int(args["block"])
         
         init_filters()
         init_offsets()
