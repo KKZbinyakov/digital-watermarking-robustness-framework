@@ -6,7 +6,7 @@ https://www.mdpi.com/1999-5903/9/3/45
 import numpy as np
 import warnings
 cimport numpy as cnp
-from cython.parallel cimport prange
+from cython.parallel cimport prange # type: ignore
 
 from dwarf.core.embedding_orchestrator.embedding_core import Ready_Frequency_Embeddings
 from dwarf.ready_solutions.utils.embedding_utils cimport (
