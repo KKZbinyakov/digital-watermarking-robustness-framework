@@ -8,6 +8,7 @@
 import numpy as np
 import pytest
 from conftest import make_photo, solutions
+from PIL import Image
 
 import dwarf.ready_solutions.attack_solutions  # noqa: F401  наполняет реестр атак
 from dwarf.core.attack_orchestrator.attack_core import Attack_Core
@@ -47,6 +48,50 @@ def run(name, image, **params):
         return Attack_Core.get_attack_class_by_name(name).attack(input_image=image, **params)
     except RuntimeError as error:
         pytest.skip(f"{name}: {error}")
+
+
+def mean_absolute_error(image, reference):
+    """
+    Средняя абсолютная разница по пикселям — грубая мера силы искажения.
+
+    Args:
+        image (np.ndarray): матрица изображения после атаки
+        reference (np.ndarray): исходная матрица изображения
+
+    Returns:
+        float: средняя абсолютная разница уровней
+    """
+    return np.abs(image.astype(np.float64) - reference.astype(np.float64)).mean()
+
+
+def changed_pixel_count(image, reference):
+    """
+    Число пикселей, изменившихся хотя бы по одному каналу.
+
+    Args:
+        image (np.ndarray): матрица изображения после атаки
+        reference (np.ndarray): исходная матрица изображения
+
+    Returns:
+        int: число различающихся пикселей
+    """
+    return int(np.count_nonzero(np.any(image != reference, axis=2)))
+
+
+def high_frequency_energy(image):
+    """
+    Грубая мера мелкой структуры: средний модуль разности соседних пикселей.
+
+    Размытие и диффузия эту величину снижают, увеличение резкости — поднимают.
+
+    Args:
+        image (np.ndarray): матрица изображения
+
+    Returns:
+        float: сумма средних модулей разности по строкам и по столбцам
+    """
+    data = image.astype(np.float64)
+    return np.abs(np.diff(data, axis=1)).mean() + np.abs(np.diff(data, axis=0)).mean()
 
 
 # --- общий контракт -------------------------------------------------------
@@ -327,3 +372,127 @@ def test_histogram_equalization_widens_range(method, photo):
 def test_cython_attacks_reject_invalid_parameters(name, params, photo):
     with pytest.raises(ValueError):
         run(name, photo, **params)
+
+
+# --- шум --------------------------------------------------------------
+
+
+@pytest.mark.parametrize("weak, strong", [(0.01, 0.08)])
+def test_awgn_higher_sigma_distorts_more(weak, strong, photo):
+    error_weak = mean_absolute_error(run("AWGN", photo, sigma=weak, seed=1), photo)
+    error_strong = mean_absolute_error(run("AWGN", photo, sigma=strong, seed=1), photo)
+    assert error_strong > error_weak
+
+
+@pytest.mark.parametrize("low, high", [(0.001, 0.05)])
+def test_impulse_higher_density_corrupts_more_pixels(low, high, photo):
+    changed_low = changed_pixel_count(run("Impulse", photo, density=low, seed=1), photo)
+    changed_high = changed_pixel_count(run("Impulse", photo, density=high, seed=1), photo)
+    assert changed_high > changed_low
+
+
+@pytest.mark.parametrize("weak, strong", [(0.01, 0.2)])
+def test_periodic_higher_amplitude_distorts_more(weak, strong, photo):
+    error_weak = mean_absolute_error(run("Periodic", photo, amplitude=weak, seed=1), photo)
+    error_strong = mean_absolute_error(run("Periodic", photo, amplitude=strong, seed=1), photo)
+    assert error_strong > error_weak
+
+
+@pytest.mark.parametrize("low_peak, high_peak", [(2.0, 500.0)])
+def test_poisson_lower_peak_distorts_more(low_peak, high_peak, photo):
+    """Меньше peak значит меньше фотонов на пиксель и относительно сильнее дробовой шум."""
+    error_low_peak = mean_absolute_error(run("Poisson", photo, peak=low_peak, seed=1), photo)
+    error_high_peak = mean_absolute_error(run("Poisson", photo, peak=high_peak, seed=1), photo)
+    assert error_low_peak > error_high_peak
+
+
+@pytest.mark.parametrize("low, high", [(0.001, 0.05)])
+def test_salt_and_pepper_higher_density_corrupts_more_pixels(low, high, photo):
+    changed_low = changed_pixel_count(run("Salt_and_Pepper", photo, density=low, seed=1), photo)
+    changed_high = changed_pixel_count(run("Salt_and_Pepper", photo, density=high, seed=1), photo)
+    assert changed_high > changed_low
+
+
+def test_salt_and_pepper_only_produces_pure_black_or_white(photo):
+    result = run("Salt_and_Pepper", photo, density=0.05, seed=1)
+    changed_mask = np.any(result != photo, axis=2)
+    changed_pixels = result[changed_mask]
+    is_salt = np.all(changed_pixels == 255, axis=1)
+    is_pepper = np.all(changed_pixels == 0, axis=1)
+    assert np.all(is_salt | is_pepper)
+
+
+@pytest.mark.parametrize("weak, strong", [(0.001, 0.05)])
+def test_speckle_higher_variance_distorts_more(weak, strong, photo):
+    error_weak = mean_absolute_error(run("Speckle", photo, variance=weak, seed=1), photo)
+    error_strong = mean_absolute_error(run("Speckle", photo, variance=strong, seed=1), photo)
+    assert error_strong > error_weak
+
+
+# --- фильтрация ---------------------------------------------------------
+
+
+@pytest.mark.parametrize("weak, strong", [(0.5, 5.0)])
+def test_gaussian_blur_higher_sigma_smooths_more(weak, strong, photo):
+    energy_weak = high_frequency_energy(run("Gaussian_Blur", photo, sigma=weak))
+    energy_strong = high_frequency_energy(run("Gaussian_Blur", photo, sigma=strong))
+    assert energy_strong < energy_weak
+
+
+@pytest.mark.parametrize("small, large", [(3, 15)])
+def test_box_filter_larger_window_smooths_more(small, large, photo):
+    energy_small = high_frequency_energy(run("Box_Filter", photo, window=small))
+    energy_large = high_frequency_energy(run("Box_Filter", photo, window=large))
+    assert energy_large < energy_small
+
+
+@pytest.mark.parametrize("few, many", [(1, 50)])
+def test_anisotropic_diffusion_more_iterations_smooths_more(few, many, photo):
+    energy_few = high_frequency_energy(run("Anisotropic_Diffusion", photo, iterations=few))
+    energy_many = high_frequency_energy(run("Anisotropic_Diffusion", photo, iterations=many))
+    assert energy_many < energy_few
+
+
+def test_unsharp_mask_sharpens_by_default(photo):
+    assert high_frequency_energy(run("Unsharp_Mask", photo)) > high_frequency_energy(photo)
+
+
+@pytest.mark.parametrize("weak, strong", [(0.2, 4.0)])
+def test_unsharp_mask_stronger_amount_sharpens_more(weak, strong, photo):
+    energy_weak = high_frequency_energy(run("Unsharp_Mask", photo, amount=weak))
+    energy_strong = high_frequency_energy(run("Unsharp_Mask", photo, amount=strong))
+    assert energy_strong > energy_weak
+
+
+def test_median_filter_reduces_salt_and_pepper_noise(photo):
+    noisy = run("Salt_and_Pepper", photo, density=0.05, seed=1)
+    cleaned = run("Median_Filter", noisy, window=3)
+    assert mean_absolute_error(cleaned, photo) < mean_absolute_error(noisy, photo)
+
+
+def test_wiener_filter_reduces_gaussian_noise(photo):
+    noisy = run("AWGN", photo, sigma=0.05, seed=1)
+    cleaned = run("Wiener_Filter", noisy)
+    assert mean_absolute_error(cleaned, photo) < mean_absolute_error(noisy, photo)
+
+
+def test_bilateral_filter_reduces_gaussian_noise(photo):
+    noisy = run("AWGN", photo, sigma=0.05, seed=1)
+    cleaned = run("Bilateral_Filter", noisy)
+    assert mean_absolute_error(cleaned, photo) < mean_absolute_error(noisy, photo)
+
+
+def test_homomorphic_filter_preserves_chroma(photo):
+    """Фильтруется только канал Y, поэтому цветность меняется лишь на погрешность round-trip YCbCr."""
+    result = run("Homomorphic_Filter", photo)
+    original_ycbcr = np.asarray(Image.fromarray(photo, "RGB").convert("YCbCr"), dtype=np.float64)
+    result_ycbcr = np.asarray(Image.fromarray(result, "RGB").convert("YCbCr"), dtype=np.float64)
+    assert mean_absolute_error(result_ycbcr[..., 1:], original_ycbcr[..., 1:]) < 2.0
+    assert not np.array_equal(result_ycbcr[..., 0], original_ycbcr[..., 0])
+
+
+@pytest.mark.parametrize("mild, strong", [(1.2, 3.0)])
+def test_homomorphic_filter_higher_gamma_high_boosts_detail(mild, strong, photo):
+    energy_mild = high_frequency_energy(run("Homomorphic_Filter", photo, gamma_high=mild))
+    energy_strong = high_frequency_energy(run("Homomorphic_Filter", photo, gamma_high=strong))
+    assert energy_strong > energy_mild
