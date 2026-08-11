@@ -18,7 +18,16 @@ NAMES = sorted(ATTACKS)
 LOSSLESS = frozenset({"Tiff", "Flif"})
 """Атаки без потерь: обязаны возвращать матрицу, совпадающую с входом побитово."""
 
-SEEDED = frozenset({"Color_Jitter", "Color_Space_Noise"})
+SEEDED = frozenset({
+    "Color_Jitter",
+    "Color_Space_Noise",
+    "AWGN",
+    "Impulse",
+    "Periodic",
+    "Poisson",
+    "Salt_and_Pepper",
+    "Speckle",
+})
 """Атаки, у которых seed влияет на результат при значениях по умолчанию."""
 
 

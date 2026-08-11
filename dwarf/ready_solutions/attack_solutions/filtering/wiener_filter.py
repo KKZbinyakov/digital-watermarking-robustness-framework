@@ -45,10 +45,11 @@ class Wiener_Filter(Ready_Filtering_Attacks):
             raise ValueError(f"noise must not be negative, got {noise}")
 
         data = to_matrix(input_image).astype(np.float32) / 255.0
+        wiener_noise = None if noise == 0.0 else noise
 
         filtered = np.empty_like(data)
         for c in range(data.shape[2]):
-            filtered[..., c] = wiener(data[..., c], mysize=(window, window), noise=noise)
+            filtered[..., c] = wiener(data[..., c], mysize=(window, window), noise=wiener_noise)
 
         filtered = np.nan_to_num(filtered, nan=0.0)
         return to_matrix(np.clip(filtered, 0, 1) * 255.0)
