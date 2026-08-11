@@ -139,8 +139,8 @@ class DFT(Ready_Frequency_Embeddings):
                 }
         args = {**defaults, **args}
         
-        image = args.get["input_image"]
-        watermark = args.get["watermark_bits"]
+        image = args["input_image"]
+        watermark = args["watermark_bits"]
         
         if image is None or watermark is None:
             raise ValueError("input_image/image_path or watermark_bits not given")
