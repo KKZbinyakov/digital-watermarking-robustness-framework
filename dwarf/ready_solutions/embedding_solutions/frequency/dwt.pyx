@@ -233,6 +233,13 @@ class DWT(Ready_Frequency_Embeddings):
         cdef int W = img_c.shape[1]
         cdef int blocks_h = H // block_size
         cdef int blocks_w = W // block_size
+        cdef int capacity = blocks_h * blocks_w
+        cdef int wm_len = wm_c.shape[0]
+
+        if wm_len > capacity:
+            raise ValueError(
+                f"Not enough capacity: need {wm_len} blocks, available {capacity}."
+            )
         cdef int half_block = block_size >> 1
         
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] watermarked_img = img_c.copy()
@@ -309,6 +316,12 @@ class DWT(Ready_Frequency_Embeddings):
         cdef int W = img_c.shape[1]
         cdef int blocks_h = H // block_size
         cdef int blocks_w = W // block_size
+        cdef int capacity = blocks_h * blocks_w
+
+        if num_bits > capacity:
+            raise ValueError(
+                f"Cannot extract {num_bits} bits: capacity is {capacity}."
+            )
         cdef int half_block = block_size >> 1
         
         cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] extracted_wm = np.zeros(num_bits, dtype=np.int32)

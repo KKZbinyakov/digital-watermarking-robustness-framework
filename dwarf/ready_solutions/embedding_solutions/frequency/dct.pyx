@@ -147,10 +147,19 @@ class DCT(Ready_Frequency_Embeddings):
         
         cdef int H = img_c.shape[0]
         cdef int W = img_c.shape[1]
+        cdef int blocks_h = H // 8
+        cdef int blocks_w = W // 8
+        cdef int capacity = blocks_h * blocks_w
+        cdef int wm_len = wm_c.shape[0]
+
+        if wm_len > capacity:
+            raise ValueError(
+                f"Not enough capacity: need {wm_len} blocks, available {capacity}."
+            )
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] watermarked_img = img_c.copy()
         cdef double[:, :] img_view = watermarked_img
         
-        _embed_core(img_view, H // 8, W // 8, wm_c, margin, threshold)
+        _embed_core(img_view, blocks_h, blocks_w, wm_c, margin, threshold)
         
         return watermarked_img
 
@@ -187,9 +196,17 @@ class DCT(Ready_Frequency_Embeddings):
         
         cdef int H = img_c.shape[0]
         cdef int W = img_c.shape[1]
+        cdef int blocks_h = H // 8
+        cdef int blocks_w = W // 8
+        cdef int capacity = blocks_h * blocks_w
+
+        if num_bits > capacity:
+            raise ValueError(
+                f"Cannot extract {num_bits} bits: capacity is {capacity}."
+            )
         cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] extracted_wm = np.zeros(num_bits, dtype=np.int32)
         cdef double[:, :] img_view = img_c
         
-        _extract_core(img_view, H // 8, W // 8, extracted_wm, num_bits, threshold)
+        _extract_core(img_view, blocks_h, blocks_w, extracted_wm, num_bits, threshold)
         
         return extracted_wm
