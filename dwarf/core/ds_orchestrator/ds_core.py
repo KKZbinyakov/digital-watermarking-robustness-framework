@@ -1,131 +1,89 @@
-from abc import ABC, ABCMeta, abstractmethod
+import multiprocessing
+
+from PIL import Image
+
+from dwarf.core.dwarf_exceptions import Dwarf_Exception
 
 
-class Ds_Core_Meta(ABCMeta):
-    def __getattr__(cls, name: str):
-        if name in cls._registered_dss:
-            return cls._registered_dss[name]
-        raise AttributeError(f"{cls.__name__} has no attribute {name}")
-
-class Ds_Core(ABC, metaclass=Ds_Core_Meta):
+class Ds_Core:
     """
-    Класс, содержащий в себе все готовые решения для работы с датасетами.
+    Общая логика для датасета. На пайплайне - загрузчик изображений. Анализирует директорию датасета, загружает картинки, 
+    приводит их к нужной конфигурации, загружает в очередь пак данных. Все проверки, которые есть на данный момент - условные и могут не нести смысла.
+
+    Args:
+        config (dict): Конфигурация
 
     Attributes:
-        _registered_dss: Словарь, содержащий все регистрированные решения
+        queue (multiprocessing.Queue): Очередь
+        source (str): Путь к директории с датасетом
+        images (dict): Словарь изображений
+        data (dict): Пак данных
+        image_type (type): Тип изображения
+        image_color_model (str): Модель цвета
+        image_geometry (list): Геометрия изображения
+        extensions (list): Список расширений, пока хз, точно ли он нам нужен, можем типо отсеевать неподходящие
 
     Methods:
-        __init_subclass__(cls, **kwargs): Регистрирует решение в словаре _registered_dss.
-        get_registered_dss(): Возвращает словарь _registered_dss.
-        get_all_dss(cls): Возвращает все решения, наследуемые от cls.
-        ds(args: dict = {
-            "original_bits": None,
-            "extracted_bits": None
-        }): Абстрактный метод решения, который должен быть реализован в каждом подклассе.
+        check_state(): Проверка соответствия конфигурации нужному состоянию. Необходимо для реализации, поскольку слишком много атрибутов нужно учесть.
+        generate_file_manifest(): Генерация манифеста изображений, это будет что-то типо .txt файла, где на каждой новой строке будет путь к изображению (+ другие данные). 
+        Вроде как индустриальный стандарт, удобно будет работать, нужно будет создать его один раз в самом начале.
+        load_in_queue(): Загрузка изображений в очередь
+        image_to_type(): Приведение изображения к нужному типу
+        image_to_color_model(): Приведение изображения к нужной модели цвета
+        image_to_correct_geometry(): Приведение изображения к нужной геометрии
+        formatter(): Формирование пака данных, соответственно здесь мы переводим картинку из пути в Image, приводим к нужному типу, модели цвета и геометрии, а потом превращаем в numpy array
+        main_loop(): Главный цикл, здесь вся логика.
+
+    Returns:
+        None
+
+    Raises:
+        Dwarf_Exception: Ошибка
     """
-
-    _registered_dss = {}
-
-    def __init_subclass__(cls, **kwargs):
-        super().__init_subclass__(**kwargs)
-        Ds_Core._registered_dss[cls.__name__] = cls
-
-    def get_registered_dss():
-        return Ds_Core._registered_dss
-
-    @classmethod
-    def get_all_dss(cls):
-        return cls.__subclasses__()
-
-    @staticmethod
-    @abstractmethod
-    def ds(**args):
+    def __init__(self, config: dict):
+        self.queue: multiprocessing.JoinableQueue = config.get("queue")
+        self.source: str = config.get("source")
+        self.images: dict = None
+        self.data: dict = None
+        self.image_type: type = config.get("image_type")
+        self.image_color_model: str = config.get("image_color_model")
+        self.image_geometry: list = config.get("image_geometry")
+        self.extensions: list = [".png", ".jpg", ".bmp"]
         pass
 
-    def get_ds_class_by_name(ds_name: str):
-        return Ds_Core._registered_dss[ds_name]
+    def check_state(self):
+        return
 
-    def use_dss(dss: dict):
-        all_dss = dss.keys()
-        for ds_name in all_dss:
-            Ds_Core.get_ds_class_by_name(ds_name).ds(**dss[ds_name])
+    def generate_file_manifest(self):
+        if self.source is None:
+            raise Dwarf_Exception("No source of directory")
+        return
 
-class Ready_Datasets(Ds_Core):
-    """
-    Класс, содержащий в себе все готовые решения для работы с датасетами.
-    """
+    def load_in_queue(self, data: dict):
+        if type(self.queue) is not multiprocessing.Queue:
+            raise Dwarf_Exception("Queue is incorrect type")
+        return
 
-# # Форматы, которые ядро считает валидными носителями ЦВЗ.
-# SUPPORTED_EXTENSIONS: tuple = (".png", ".bmp", ".tiff", ".tif", ".ppm")
+    def image_to_type(self, image: Image):
+        if self.image_type is None or type(self.image_type) is not type:
+            raise Dwarf_Exception("Incorrect image type")
+        return image
 
+    def image_to_color_model(self, image: Image):
+        return image
 
-# class Ds_Core:
-#     """
-#     Оркестратор датасетов (dataset orchestrator).
+    def image_to_correct_geometry(self, image: Image):
+        try:
+            if type(self.image_geometry[0]) is not int and type(self.image_geometry[0]) is not int:
+                raise Dwarf_Exception("Incorrect geometry value type")
+            return image
+        except Exception as e:
+            raise e
 
-#     Две задачи:
-#     1. Регистрация сменных ds-решений
-#     2. Поставка изображений-носителей в пайплайн
-#     """
+    def formatter(self):
+            if self.images is None:
+                raise Dwarf_Exception("No images are loaded")
+            return
 
-#     def __init__(self):
-#         self.available_ds: dict = {}   # реестр подключённых ds-решений
-#         self.dataset: list = []        # текущий список путей к изображениям
-#         pass
-
-#     def get_new_ds(self, ds_solutions: dict) -> None:
-#         """
-#         Регистрирует новые ds-решения, загружая их по пути к файлу.
-
-#         Args:
-#             ds_solutions (dict): отображение {имя: путь_к_py_файлу}, как в остальных Core.
-
-#         Returns:
-#             None
-#         """
-#         for ds in ds_solutions:
-#             self.available_ds[ds] = import_function(ds, ds_solutions[ds])
-#         return
-
-#     def get_all_available_ds(self) -> None:
-#         """
-#         Печатает имена всех зарегистрированных ds-решений.
-
-#         Returns:
-#             None
-#         """
-#         for ds in self.available_ds:
-#             print(ds)
-#         return
-
-#     def load_from_directory(self, directory: str, recursive: bool = False,
-#                             extensions: tuple = SUPPORTED_EXTENSIONS) -> list:
-#         """
-#         Собирает список путей к изображениям-носителям из директории.
-
-#         Args:
-#             directory (str): путь к папке с изображениями.
-#             recursive (bool): искать ли во вложенных папках.
-#             extensions (tuple): допустимые расширения (по умолчанию без JPEG).
-
-#         Returns:
-#             list: отсортированный список абсолютных путей к изображениям.
-#         """
-#         root = Path(directory)
-#         if not root.is_dir():
-#             raise NotADirectoryError(f"Не директория: {directory}")
-#         pattern = "**/*" if recursive else "*"
-#         exts = {e.lower() for e in extensions}
-#         self.dataset = sorted(
-#             str(p.resolve())
-#             for p in root.glob(pattern)
-#             if p.is_file() and p.suffix.lower() in exts
-#         )
-#         return self.dataset
-
-#     def __len__(self) -> int:
-#         return len(self.dataset)
-
-#     def __iter__(self) -> Iterator[str]:
-#         """Итерация по путям текущего датасета"""
-#         return iter(self.dataset)
+    def main_loop(self):
+        pass
