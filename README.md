@@ -123,10 +123,7 @@ luma = ycbcr[..., 0]
 
 capacity = (luma.shape[0] // 8) * (luma.shape[1] // 8)
 if watermark_bits.size > capacity:
-    raise ValueError(
-        f"The watermark contains {watermark_bits.size} bits, "
-        f"but this image can store only {capacity}."
-    )
+    raise ValueError(f"The watermark contains {watermark_bits.size} bits, but this image can store only {capacity}.")
 
 # The current DCT implementation operates on a two-dimensional image matrix.
 # A zero extraction threshold produces binary decisions only. With a positive
@@ -195,11 +192,8 @@ from dwarf import Attack_Core, Embedding_Core, Expertise_Core
 
 
 def concrete_names(registry: dict[str, type]) -> list[str]:
-    return sorted(
-        name
-        for name in registry
-        if not name.startswith("Ready_")
-    )
+    return sorted(name for name in registry if not name.startswith("Ready_"))
+
 
 print("Attacks:")
 print(concrete_names(Attack_Core.get_registered_attacks()))
@@ -517,9 +511,7 @@ class Horizontal_Flip(Ready_Geometric_Attacks):
 
         image = np.asarray(args["input_image"])
         if image.ndim != 3 or image.shape[2] != 3:
-            raise ValueError(
-                f"expected an RGB image of shape (H, W, 3), got {image.shape}"
-            )
+            raise ValueError(f"expected an RGB image of shape (H, W, 3), got {image.shape}")
 
         image = np.clip(image, 0, 255).round().astype(np.uint8)
         return np.ascontiguousarray(image[:, ::-1])
