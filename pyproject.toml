@@ -20,6 +20,8 @@ authors = [
 dependencies = [      # Эти зависимости устанавливаются при установке пакета
     "numpy>=1.24",
     "Pillow>=10.0",
+    "pydantic>=2.7,<3",
+    "PyYAML>=6.0.1,<7",
 ]
 
 [project.optional-dependencies]  # Эти зависимости устанавливаются при установке пакета с опциональными зависимостями pip install dwarf[ready_solutions]
