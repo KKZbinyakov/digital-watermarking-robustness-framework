@@ -1,5 +1,5 @@
-import importlib.util
 import hashlib
+import importlib.util
 
 
 def import_function(module_name: str, file_path: str):

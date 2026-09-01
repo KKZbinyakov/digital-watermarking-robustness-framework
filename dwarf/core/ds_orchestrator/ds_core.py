@@ -1,12 +1,12 @@
-import multiprocessing
 import json
-import numpy as np
-import time
+import multiprocessing
 import os
-
+import time
 from pathlib import Path
-from PIL import Image
 from queue import Full
+
+import numpy as np
+from PIL import Image
 
 from dwarf.core.dwarf_exceptions import Dwarf_Exception
 from dwarf.core.utils.utils import file_to_hash
@@ -85,12 +85,11 @@ class Ds_Core:
                     raise Dwarf_Exception(f"Queue {queue} is not a multiprocessing.Queue")
             self.queues_state = [True for _ in range(len(self.queues))]
             self.local_buffers = [[] for _ in range(len(self.queues))]
-            
             self.MANIFEST_FILE_NAME = self.source + "/" + self.MANIFEST_FILE_NAME
             self.FAILOVER_FILE = self.source + "/" + self.FAILOVER_FILE
 
         except Exception as e:
-            raise Dwarf_Exception(f"Failed to check state: {e}")
+            raise Dwarf_Exception(f"Failed to check state: {e}") from e
         return True
 
     def generate_file_manifest(self) -> bool:
@@ -108,7 +107,7 @@ class Ds_Core:
                         f.write(json.dumps(file_info) + "\n")
             return True
         except Exception as e:
-            raise Dwarf_Exception(f"Failed to generate manifest: {e}")
+            raise Dwarf_Exception(f"Failed to generate manifest: {e}") from e
 
     def image_to_type(self, image: Image) -> np.ndarray:
         """
@@ -141,7 +140,7 @@ class Ds_Core:
                     raise Dwarf_Exception("Incorrect image type")
             return img_numpy
         except Exception as e:
-            raise Dwarf_Exception(f"Failed to convert image to type: {e}")
+            raise Dwarf_Exception(f"Failed to convert image to type: {e}") from e
 
     def image_to_color_model(self, image: Image) -> Image:
         """
@@ -170,7 +169,7 @@ class Ds_Core:
                     raise Dwarf_Exception("Incorrect color model")
             return image
         except Exception as e:
-            raise Dwarf_Exception(f"Failed to convert image to color model: {e}")
+            raise Dwarf_Exception(f"Failed to convert image to color model: {e}") from e
 
     def image_to_correct_geometry(self, image: Image) -> Image:
         """
@@ -189,7 +188,7 @@ class Ds_Core:
             img = image.resize(self.image_geometry)
             return img
         except Exception as e:
-            raise Dwarf_Exception(f"Failed to convert image to correct geometry: {e}")
+            raise Dwarf_Exception(f"Failed to convert image to correct geometry: {e}") from e
 
     def formatter(self, image: Image) -> np.ndarray:
         """
@@ -210,7 +209,7 @@ class Ds_Core:
             image = self.image_to_type(image)
             return image
         except Exception as e:
-            raise Dwarf_Exception(f"Failed to format image: {e}")
+            raise Dwarf_Exception(f"Failed to format image: {e}") from e
 
     def save_buffer_to_file(self, target_idx):
         """
@@ -227,7 +226,7 @@ class Ds_Core:
                 for image in self.local_buffers[target_idx]:
                     f.write(json.dumps(image) + "\n")
         except Exception as e:
-            raise Dwarf_Exception(f"Failed to save buffer to file: {e}")
+            raise Dwarf_Exception(f"Failed to save buffer to file: {e}") from e
 
     def try_send_with_buffer(self, target_idx, data: dict):
         """
@@ -256,7 +255,7 @@ class Ds_Core:
                 self.queues_state[target_idx] = False
                 # Добавить лог ошибки
         except Exception as e:
-            raise Dwarf_Exception(f"Failed to send data to queue {queue}: {e}")
+            raise Dwarf_Exception(f"Failed to send data to queue {queue}: {e}") from e
 
     def process_failover(self):
         """
@@ -267,7 +266,7 @@ class Ds_Core:
         """
         for target_idx in range(len(self.queues)):
             try:
-                with open(self.FAILOVER_FILE + "_" + str(target_idx), "r") as f:
+                with open(self.FAILOVER_FILE + "_" + str(target_idx)) as f:
                     for line in f:
                         line = line.strip()
                         if not line:
@@ -275,13 +274,13 @@ class Ds_Core:
                         try:
                             try:
                                 data = json.loads(line)
-                            except Exception as e:
+                            except Exception:
                                 # raise Dwarf_Exception(f"Failed to load failover of file {line}: {e}")
                                 continue
                             queue = self.queues[target_idx]
                             if not self.queues_state[target_idx]:
                                 raise Dwarf_Exception(f"Queue {target_idx} is already dead, failover is not running")
-                            for i in range(self.RETRY_COUNT):
+                            for _i in range(self.RETRY_COUNT):
                                 try:
                                     queue.put(data, timeout=0.01)
                                     break
@@ -292,10 +291,10 @@ class Ds_Core:
                                     self.queues_state[target_idx] = False
                                     break
                         except Exception as e:
-                            raise Dwarf_Exception(f"Failed to load manifest of file {line} after {self.RETRY_COUNT} tries: {e}")
+                            raise Dwarf_Exception(f"Failed to load manifest of file {line} after {self.RETRY_COUNT} tries: {e}") from e
                 os.remove(self.FAILOVER_FILE + "_" + str(target_idx))
             except Exception as e:
-                raise Dwarf_Exception(f"Failed to process failover for queue {target_idx}: {e}")
+                raise Dwarf_Exception(f"Failed to process failover for queue {target_idx}: {e}") from e
 
     def send_dead_pill(self):
         """
@@ -317,9 +316,9 @@ class Ds_Core:
                         self.queues[target_idx].put(None, timeout=0.5)
                         self.queues_state[target_idx] = False
                     except Exception as e:
-                        raise Dwarf_Exception(f"Failed to send dead pill to queue {target_idx}: {e}")
+                        raise Dwarf_Exception(f"Failed to send dead pill to queue {target_idx}: {e}") from e
         except Exception as e:
-            raise Dwarf_Exception(f"Failed to send dead pill: {e}")
+            raise Dwarf_Exception(f"Failed to send dead pill: {e}") from e
 
     def main_loop(self):
         """
@@ -336,7 +335,7 @@ class Ds_Core:
 
         try:
             manifest_file_path = self.MANIFEST_FILE_NAME
-            with open(manifest_file_path, "r") as f:
+            with open(manifest_file_path) as f:
                 for line in f:
                     line = line.strip()
                     if not line:
@@ -362,7 +361,6 @@ class Ds_Core:
                         print(f"Failed to load manifest of file {line}: {e}")
                         continue
                         # raise Dwarf_Exception(f"Failed to load manifest of file {line}: {e}")
-                    
             for idx in range(len(self.local_buffers)):
                 if self.local_buffers[idx]:
                     self.save_buffer_to_file(idx)
@@ -371,21 +369,20 @@ class Ds_Core:
             self.process_failover()
             self.send_dead_pill()
         except Exception as e:
-            raise Dwarf_Exception(f"Failed to run main loop: {e}")
+            raise Dwarf_Exception(f"Failed to run main loop: {e}") from e
         finally:
             try:
                 for target_idx in range(len(self.queues)):
                     self.save_buffer_to_file(target_idx)
             except Exception as e:
-                self.send_dead_pill()  
-                raise Dwarf_Exception(f"Failed to save buffer to file in finally: {e}")
+                self.send_dead_pill()
+                raise Dwarf_Exception(f"Failed to save buffer to file in finally: {e}") from e
             try:
                 self.process_failover()
             except Exception as e:
                 self.send_dead_pill()
-                raise Dwarf_Exception(f"Failed to process failover in finally: {e}")
+                raise Dwarf_Exception(f"Failed to process failover in finally: {e}") from e
             try:
                 self.send_dead_pill()
             except Exception as e:
-                raise Dwarf_Exception(f"Failed to send dead pill in finally: {e}")
-        
+                raise Dwarf_Exception(f"Failed to send dead pill in finally: {e}") from e
