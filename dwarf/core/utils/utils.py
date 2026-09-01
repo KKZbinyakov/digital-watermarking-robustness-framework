@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 
 
 def import_function(module_name: str, file_path: str):
@@ -7,3 +8,11 @@ def import_function(module_name: str, file_path: str):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+def file_to_hash(file_path: str):
+    hash_obj = hashlib.md5()
+    with open(file_path, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_obj.update(chunk)
+
+    return hash_obj.hexdigest()
