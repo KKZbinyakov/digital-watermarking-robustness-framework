@@ -1,5 +1,10 @@
-"""Public configuration and solution-catalog API for the DWARF pipeline."""
+"""Public API for DWARF experiment configuration, discovery and datasets."""
 
+from dwarf.pipeline.artifacts import (
+    ExtractedWatermark,
+    ImageArtifact,
+    OriginalWatermark,
+)
 from dwarf.pipeline.catalog import SolutionCatalog
 from dwarf.pipeline.config import (
     SCHEMA_VERSION,
@@ -22,13 +27,26 @@ from dwarf.pipeline.config import (
     WatermarkSpec,
 )
 from dwarf.pipeline.config_loader import load_experiment_config
+from dwarf.pipeline.datasets import DirectoryDatasetSource
 from dwarf.pipeline.exceptions import (
+    ArtifactValidationError,
     ConfigLoadError,
+    DatasetDiscoveryError,
+    DatasetIntegrityError,
+    DatasetLoadError,
+    DatasetManifestError,
+    DatasetSourceError,
     SemanticValidationError,
     SemanticValidationIssue,
     SolutionCatalogError,
     SolutionConflictError,
     SolutionDiscoveryError,
+)
+from dwarf.pipeline.manifest import (
+    MANIFEST_SCHEMA_VERSION,
+    DatasetManifest,
+    SampleReference,
+    make_sample_id,
 )
 from dwarf.pipeline.resolved import (
     ResolvedAttackScenario,
@@ -53,26 +71,37 @@ from dwarf.pipeline.solution_spec import (
 )
 
 __all__ = [
+    "MANIFEST_SCHEMA_VERSION",
     "SCHEMA_VERSION",
     "UNSET",
     "ArtifactInputSpec",
     "ArtifactKind",
     "ArtifactReference",
+    "ArtifactValidationError",
     "AttackScenarioSpec",
     "AttackStepSpec",
     "ConfigLoadError",
     "DataContract",
+    "DatasetDiscoveryError",
+    "DatasetIntegrityError",
+    "DatasetLoadError",
+    "DatasetManifest",
+    "DatasetManifestError",
+    "DatasetSourceError",
+    "DirectoryDatasetSource",
     "DirectoryDatasetSpec",
     "EmbeddingSpec",
     "ExecutionSpec",
     "ExperimentConfig",
     "ExperimentMetadata",
+    "ExtractedWatermark",
     "FixedBitsWatermarkSpec",
+    "ImageArtifact",
     "ImagePreprocessingSpec",
     "MetricBindingSpec",
     "OperationSpec",
+    "OriginalWatermark",
     "OutputSpec",
-    "SolutionOperationSpec",
     "ParameterKind",
     "ParameterLinkSpec",
     "ParameterSpace",
@@ -84,6 +113,7 @@ __all__ = [
     "ResolvedEmbedding",
     "ResolvedExperiment",
     "ResolvedMetric",
+    "SampleReference",
     "SemanticValidationError",
     "SemanticValidationIssue",
     "SolutionCatalog",
@@ -91,7 +121,9 @@ __all__ = [
     "SolutionConflictError",
     "SolutionDiscoveryError",
     "SolutionKind",
+    "SolutionOperationSpec",
     "SolutionSpec",
     "WatermarkSpec",
     "load_experiment_config",
+    "make_sample_id",
 ]
