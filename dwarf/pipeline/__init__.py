@@ -1,5 +1,6 @@
-"""Public configuration API for the DWARF experiment pipeline."""
+"""Public configuration and solution-catalog API for the DWARF pipeline."""
 
+from dwarf.pipeline.catalog import SolutionCatalog
 from dwarf.pipeline.config import (
     SCHEMA_VERSION,
     ArtifactReference,
@@ -21,14 +22,46 @@ from dwarf.pipeline.config import (
     WatermarkSpec,
 )
 from dwarf.pipeline.config_loader import load_experiment_config
-from dwarf.pipeline.exceptions import ConfigLoadError
+from dwarf.pipeline.exceptions import (
+    ConfigLoadError,
+    SemanticValidationError,
+    SemanticValidationIssue,
+    SolutionCatalogError,
+    SolutionConflictError,
+    SolutionDiscoveryError,
+)
+from dwarf.pipeline.resolved import (
+    ResolvedAttackScenario,
+    ResolvedAttackStep,
+    ResolvedEmbedding,
+    ResolvedExperiment,
+    ResolvedMetric,
+)
+from dwarf.pipeline.solution_spec import (
+    UNSET,
+    ArtifactInputSpec,
+    ArtifactKind,
+    DataContract,
+    ParameterKind,
+    ParameterLinkSpec,
+    ParameterSpec,
+    SolutionKind,
+    SolutionSpec,
+)
+from dwarf.pipeline.solution_spec import (
+    OperationSpec as SolutionOperationSpec,
+)
 
 __all__ = [
     "SCHEMA_VERSION",
+    "UNSET",
+    "ArtifactInputSpec",
+    "ArtifactKind",
     "ArtifactReference",
     "AttackScenarioSpec",
     "AttackStepSpec",
     "ConfigLoadError",
+    "DataContract",
     "DirectoryDatasetSpec",
     "EmbeddingSpec",
     "ExecutionSpec",
@@ -39,9 +72,26 @@ __all__ = [
     "MetricBindingSpec",
     "OperationSpec",
     "OutputSpec",
+    "SolutionOperationSpec",
+    "ParameterKind",
+    "ParameterLinkSpec",
     "ParameterSpace",
+    "ParameterSpec",
     "RandomBitsWatermarkSpec",
     "ReportSpec",
+    "ResolvedAttackScenario",
+    "ResolvedAttackStep",
+    "ResolvedEmbedding",
+    "ResolvedExperiment",
+    "ResolvedMetric",
+    "SemanticValidationError",
+    "SemanticValidationIssue",
+    "SolutionCatalog",
+    "SolutionCatalogError",
+    "SolutionConflictError",
+    "SolutionDiscoveryError",
+    "SolutionKind",
+    "SolutionSpec",
     "WatermarkSpec",
     "load_experiment_config",
 ]
