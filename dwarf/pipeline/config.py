@@ -2,8 +2,8 @@
 """Strict, versioned configuration models for DWARF experiments.
 
 The models in this module describe an experiment without importing or executing
-ready-made attacks, embedding methods, or metrics. Runtime validation against
-the solution registries belongs to the future catalog and planner layers.
+ready-made attacks, embedding methods, or metrics. Registry-dependent validation
+and deterministic expansion belong to the catalog and planner layers.
 """
 
 from __future__ import annotations
@@ -232,7 +232,7 @@ class ParameterSpace(StrictConfigModel):
 
     ``fixed`` values are always applied. A Cartesian ``grid`` and explicit
     linked ``variants`` are deliberately mutually exclusive. This keeps the
-    meaning of a configuration unambiguous before the planner is implemented.
+    meaning of a configuration unambiguous when the planner expands it.
     """
 
     fixed: Mapping[ParameterName, Any] = Field(default_factory=dict)
@@ -358,7 +358,7 @@ class ExperimentMetadata(StrictConfigModel):
 
 
 class ImagePreprocessingSpec(StrictConfigModel):
-    """Deterministic preprocessing requested from the future dataset source."""
+    """Deterministic preprocessing requested from the dataset source."""
 
     color_mode: Literal["RGB"] = "RGB"
     resize: Optional[tuple[StrictPositiveInt, StrictPositiveInt]] = None

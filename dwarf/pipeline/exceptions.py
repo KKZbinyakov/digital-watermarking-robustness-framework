@@ -1,5 +1,5 @@
 # ruff: noqa: UP045
-"""Exceptions raised by experiment configuration, discovery and datasets."""
+"""Exceptions raised by experiment configuration, discovery, datasets and planning."""
 
 from __future__ import annotations
 
@@ -45,6 +45,25 @@ class DatasetLoadError(DatasetSourceError):
 
 class DatasetIntegrityError(DatasetSourceError):
     """A selected file changed or no longer matches its manifest entry."""
+
+
+class PlanningError(ValueError):
+    """A resolved experiment cannot be transformed into an execution plan."""
+
+
+class PlanTooLargeError(PlanningError):
+    """The planned case count exceeds the configured safety limit."""
+
+    def __init__(self, *, case_count: int, max_cases: int) -> None:
+        for field_name, value in (("case_count", case_count), ("max_cases", max_cases)):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{field_name} must be a non-negative integer")
+        self.case_count = case_count
+        self.max_cases = max_cases
+        super().__init__(
+            f"experiment plan contains {case_count} cases, exceeding the configured "
+            f"maximum of {max_cases}; set experiment.allow_large_plan=true to proceed"
+        )
 
 
 class SolutionCatalogError(RuntimeError):
@@ -93,6 +112,8 @@ __all__ = [
     "DatasetLoadError",
     "DatasetManifestError",
     "DatasetSourceError",
+    "PlanTooLargeError",
+    "PlanningError",
     "SemanticValidationError",
     "SemanticValidationIssue",
     "SolutionCatalogError",
