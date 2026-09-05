@@ -187,7 +187,8 @@ class DWTDCT_SVD(Ready_Frequency_Embeddings):
         :param input_image: матрица входного изображения (канал яркости Y).
         :param watermark_bits: массив битов ЦВЗ.
         :param block_size: размер блока для DWT (должен быть равен 16).
-        :param delta: шаг квантования для QIM.
+        :param delta: шаг квантования для QIM; по умолчанию 80.0, чтобы встраивание
+            сохранялось после штатного преобразования YCbCr -> RGB -> YCbCr.
         :param wavelet_name: тип вейвлета (haar, db4, sym4).
         :return output_image: матрица изображения с встроенным ЦВЗ.
         """
@@ -195,7 +196,7 @@ class DWTDCT_SVD(Ready_Frequency_Embeddings):
                     "input_image": None,
                     "watermark_bits": None,
                     "block_size": 16,
-                    "delta": 40.0,
+                    "delta": 80.0,
                     "wavelet_name": "haar"
                 }
         args = {**defaults, **args}
@@ -279,7 +280,7 @@ class DWTDCT_SVD(Ready_Frequency_Embeddings):
                     "input_image": None,
                     "num_bits": 0,
                     "block_size": 16,
-                    "delta": 40.0,
+                    "delta": 80.0,
                     "wavelet_name": "haar"
                 }
         args = {**defaults, **args}

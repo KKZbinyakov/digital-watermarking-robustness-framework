@@ -112,6 +112,41 @@ cdef void extract_subband(double[:, :] S, cnp.int32_t[:] wm, int wm_len,
 
         wm[i_bit] = 1 if c1 > c2 else 0
 
+cdef int count_subband_bit_errors(object subbands, cnp.int32_t[:] wm,
+                                  int wm_len, int block):
+    """Считает число бит, потерянных после reconstruction -> decomposition."""
+    cdef int n_sub = len(subbands)
+    cdef int s_i, h, w, nb_c, n_blocks
+    cdef int blk, i_bit, br, bc, r0, k0
+    cdef int errors = 0
+    cdef double[:, :] S
+    cdef double c1, c2
+
+    for s_i in range(n_sub):
+        S = subbands[s_i]
+        h = S.shape[0]
+        w = S.shape[1]
+        nb_c = w // block
+        n_blocks = (h // block) * nb_c
+
+        for blk in range(n_blocks):
+            i_bit = blk * n_sub + s_i
+            if i_bit >= wm_len:
+                break
+
+            br = blk // nb_c
+            bc = blk % nb_c
+            r0 = br * block
+            k0 = bc * block
+
+            c1 = S[r0 + 1, k0 + 1]
+            c2 = S[r0 + 2, k0 + 2]
+
+            if (wm[i_bit] == 1 and c1 <= c2) or (wm[i_bit] != 1 and c2 <= c1):
+                errors += 1
+
+    return errors
+
 def _embed_core(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] image,
                 cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] watermark,
                 double margin, int n_levels, int dfb_levels,
@@ -123,8 +158,8 @@ def _embed_core(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] image,
     cdef cnp.int32_t[:] wm_view = watermark
     cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] cur = image
     cdef double[:, :] S
-    cdef int s_i, n_sub, h, w, cap, it
-    
+    cdef int s_i, n_sub, h, w, cap, it, errors
+
     for it in range(iterations):
         lowpass, bands = contourlet_decompose(cur, n_levels, dfb_levels)
         subbands = bands[sc]
@@ -138,6 +173,12 @@ def _embed_core(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] image,
                 raise ValueError(
                     f"Given {wm_len} bits, but capacity of the scale {sc} is only {cap} bits"
                     f"({n_sub} subbands {h}x{w}, block {block}x{block}).")
+        else:
+            # Проверяем предыдущий проход уже после реконструкции. Если все
+            # биты читаются верно, дальнейшее усиление не требуется.
+            errors = count_subband_bit_errors(subbands, wm_view, wm_len, block)
+            if errors == 0:
+                return cur
 
         for s_i in range(n_sub):
             S = subbands[s_i]
@@ -148,6 +189,17 @@ def _embed_core(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] image,
             contourlet_reconstruct(np.ascontiguousarray(lowpass, dtype=np.float64),
                                    bands, dfb_levels),
             dtype=np.float64)
+
+    # Проверяем состояние после последней разрешённой итерации.
+    lowpass, bands = contourlet_decompose(cur, n_levels, dfb_levels)
+    subbands = bands[sc]
+    errors = count_subband_bit_errors(subbands, wm_view, wm_len, block)
+    if errors != 0:
+        raise RuntimeError(
+            f"Contourlet embedding did not converge after {iterations} iterations: "
+            f"{errors} of {wm_len} bits are not recoverable."
+        )
+
     return cur
 
 def _extract_core(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] image,
@@ -182,6 +234,35 @@ def _extract_core(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] image,
     return extracted_wm
 
 
+def _valid_contourlet_shape(int height, int width, int n_levels, int dfb_levels):
+    """
+    Возвращает максимальную квадратную верхнюю левую область, совместимую
+    с текущей реализацией Лапласовой пирамиды и DFB.
+
+    DFB в embedding_utils_pyx предъявляет не только требование кратности
+    размеров степени двойки, но и ограничение на их взаимное отношение.
+    Квадратная область гарантированно удовлетворяет этому ограничению на
+    каждом уровне разложения. Сторона дополнительно делается кратной
+    2**(n_levels + dfb_levels).
+    """
+    if n_levels < 1:
+        raise ValueError("n_levels must be >= 1.")
+    if dfb_levels < 0:
+        raise ValueError("dfb_levels must be >= 0.")
+
+    cdef int factor = 1 << (n_levels + dfb_levels)
+    cdef int side = (min(height, width) // factor) * factor
+
+    if side == 0:
+        raise ValueError(
+            f"Image size {width}x{height} is too small for "
+            f"n_levels={n_levels}, dfb_levels={dfb_levels}: "
+            f"need at least {factor}x{factor}."
+        )
+
+    return side, side
+
+
 class Contourlet(Ready_Frequency_Embeddings):
     @staticmethod
     def embedding(**args):
@@ -191,10 +272,16 @@ class Contourlet(Ready_Frequency_Embeddings):
         :param watermark_bits: массив битов ЦВЗ.
         :param margin: требуемый зазор между парой коэффициентов.
         :param n_levels: число масштабов Лапласовой пирамиды.
-        :param dfb_levels: число уровней направленного дерева.
+        :param dfb_levels: число уровней направленного дерева. Если исходное
+            изображение не совместимо с ограничениями DFB, используется максимальная
+            квадратная верхняя левая область со стороной, кратной
+            2**(n_levels + dfb_levels); остальная часть изображения сохраняется
+            без изменений.
         :param scale: индекс масштаба для встраивания (-1 для последнего).
         :param block: сторона блока внутри поддиапазона.
-        :param iterations: число итераций встраивания.
+        :param iterations: максимальное число итераций встраивания. Процесс
+            завершается раньше, как только все биты корректно читаются после
+            reconstruction -> decomposition.
 
         :return output_image: матрица изображения с встроенным ЦВЗ.
         """
@@ -206,7 +293,7 @@ class Contourlet(Ready_Frequency_Embeddings):
                     "dfb_levels": 2,
                     "scale": -1,
                     "block": 4,
-                    "iterations": 3
+                    "iterations": 10
                 }
         args = {**defaults, **args}
         image = args["input_image"]
@@ -216,17 +303,22 @@ class Contourlet(Ready_Frequency_Embeddings):
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
-        
+
         cdef double margin = args["margin"]
         cdef int n_levels = int(args["n_levels"])
         cdef int dfb_levels = int(args["dfb_levels"])
         cdef int scale = int(args["scale"])
         cdef int block = int(args["block"])
         cdef int iterations = int(args["iterations"])
-        
-        init_filters()
-        init_offsets()
-        
+        cdef int H = img_c.shape[0]
+        cdef int W = img_c.shape[1]
+        cdef int valid_h, valid_w
+
+        if n_levels < 1:
+            raise ValueError("n_levels must be >= 1.")
+        if dfb_levels < 0:
+            raise ValueError("dfb_levels must be >= 0.")
+
         cdef int sc = n_levels - 1 if scale < 0 else scale
         if sc < 0 or sc >= n_levels:
             raise ValueError(f"scale={sc} out of range [0, {n_levels - 1}].")
@@ -234,8 +326,25 @@ class Contourlet(Ready_Frequency_Embeddings):
             raise ValueError("block must be >= 4.")
         if iterations < 1:
             raise ValueError("iterations must be >= 1.")
-            
-        return _embed_core(img_c, wm_c, margin, n_levels, dfb_levels, sc, block, iterations)
+
+        valid_h, valid_w = _valid_contourlet_shape(H, W, n_levels, dfb_levels)
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] work = np.ascontiguousarray(
+            img_c[:valid_h, :valid_w], dtype=np.float64
+        )
+
+        init_filters()
+        init_offsets()
+
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] embedded = _embed_core(
+            work, wm_c, margin, n_levels, dfb_levels, sc, block, iterations
+        )
+
+        if valid_h == H and valid_w == W:
+            return embedded
+
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] output = img_c.copy()
+        output[:valid_h, :valid_w] = embedded
+        return output
 
     @staticmethod
     def extraction(**args):
@@ -244,7 +353,9 @@ class Contourlet(Ready_Frequency_Embeddings):
         :param input_image: матрица изображения с ЦВЗ (канал яркости Y).
         :param num_bits: длина ЦВЗ в битах.
         :param n_levels: число масштабов лапласовой пирамиды.
-        :param dfb_levels: число уровней направленного дерева.
+        :param dfb_levels: число уровней направленного дерева. Используется та же
+            максимальная квадратная верхняя левая область со стороной, кратной
+            2**(n_levels + dfb_levels), что и при embedding.
         :param scale: индекс масштаба.
         :param block: сторона блока внутри поддиапазона.
 
@@ -266,19 +377,32 @@ class Contourlet(Ready_Frequency_Embeddings):
 
         cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
         cdef int wm_length = num_bits
-        
+
         cdef int n_levels = int(args["n_levels"])
         cdef int dfb_levels = int(args["dfb_levels"])
         cdef int scale = int(args["scale"])
         cdef int block = int(args["block"])
-        
-        init_filters()
-        init_offsets()
-        
+        cdef int H = img_c.shape[0]
+        cdef int W = img_c.shape[1]
+        cdef int valid_h, valid_w
+
+        if n_levels < 1:
+            raise ValueError("n_levels must be >= 1.")
+        if dfb_levels < 0:
+            raise ValueError("dfb_levels must be >= 0.")
+
         cdef int sc = n_levels - 1 if scale < 0 else scale
         if sc < 0 or sc >= n_levels:
             raise ValueError(f"scale={sc} out of range [0, {n_levels - 1}].")
         if block < 4:
             raise ValueError("block must be >= 4.")
-            
-        return _extract_core(img_c, wm_length, n_levels, dfb_levels, sc, block)
+
+        valid_h, valid_w = _valid_contourlet_shape(H, W, n_levels, dfb_levels)
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] work = np.ascontiguousarray(
+            img_c[:valid_h, :valid_w], dtype=np.float64
+        )
+
+        init_filters()
+        init_offsets()
+
+        return _extract_core(work, wm_length, n_levels, dfb_levels, sc, block)
