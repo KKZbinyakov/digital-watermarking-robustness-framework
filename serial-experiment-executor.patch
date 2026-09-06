@@ -1,0 +1,2051 @@
+diff --git a/dwarf/pipeline/executors.py b/dwarf/pipeline/executors.py
+new file mode 100644
+index 0000000..3f72a94
+--- /dev/null
++++ b/dwarf/pipeline/executors.py
+@@ -0,0 +1,602 @@
++# ruff: noqa: UP045
++"""Serial execution of deterministic DWARF experiment plans."""
++
++from __future__ import annotations
++
++import hashlib
++import json
++from collections import defaultdict
++from collections.abc import Iterable, Mapping
++from dataclasses import dataclass
++from datetime import datetime, timezone
++from itertools import product
++from time import perf_counter
++from typing import Any, Optional
++
++from dwarf.pipeline.results import (
++    CaseResult,
++    ExecutionResult,
++    MetricResult,
++    OperationError,
++    OperationTiming,
++    ResultStatus,
++    WorkUnitResult,
++)
++from dwarf.pipeline.runtime import (
++    ErasurePolicy,
++    RuntimeAdapterRegistry,
++    derive_runtime_seed,
++    materialize_watermark,
++)
++from dwarf.pipeline.solution_spec import UNSET
++
++
++class ExecutionError(RuntimeError):
++    """Base class for experiment execution failures."""
++
++
++class ExecutionAbortedError(ExecutionError):
++    """Fail-fast execution stopped at the first failed operation."""
++
++    def __init__(self, stage: str, error: BaseException) -> None:
++        self.stage = stage
++        self.original_error = error
++        super().__init__(f"serial execution aborted during {stage}: {error}")
++
++
++class UnsupportedExecutionBackendError(ExecutionError):
++    """The requested execution backend has not been implemented."""
++
++
++_MISSING = object()
++
++
++def _attribute(value: Any, *names: str, default: Any = _MISSING) -> Any:
++    for name in names:
++        if hasattr(value, name):
++            return getattr(value, name)
++    if default is _MISSING:
++        joined = ", ".join(repr(name) for name in names)
++        raise AttributeError(f"{type(value).__name__} does not provide any of: {joined}")
++    return default
++
++
++def _mapping(value: Any) -> dict[str, Any]:
++    if value is None:
++        return {}
++    if isinstance(value, Mapping):
++        return dict(value)
++    if hasattr(value, "to_dict"):
++        converted = value.to_dict()
++        if isinstance(converted, Mapping):
++            return dict(converted)
++    return dict(value)
++
++
++def _identifier(value: Any, *names: str) -> str:
++    result = _attribute(value, *names, default=None)
++    if result is None:
++        return ""
++    return str(result)
++
++
++def _solution_name(value: Any) -> str:
++    name = _identifier(value, "solution_name", "name")
++    if name:
++        return name
++    implementation = _attribute(value, "implementation", default=None)
++    candidate = getattr(implementation, "__name__", None)
++    if isinstance(candidate, str) and candidate:
++        return candidate
++    raise TypeError(f"could not determine solution name from {type(value).__name__}")
++
++
++def _parameters(value: Any) -> tuple[tuple[str, Any], ...]:
++    mapping = _mapping(_attribute(value, "parameters", "params", default={}))
++    return tuple(sorted(mapping.items()))
++
++
++def _fingerprint(payload: Any) -> str:
++    encoded = json.dumps(
++        payload,
++        allow_nan=False,
++        ensure_ascii=False,
++        separators=(",", ":"),
++        sort_keys=True,
++        default=str,
++    ).encode("utf-8")
++    return hashlib.sha256(encoded).hexdigest()
++
++
++@dataclass(frozen=True)
++class _RuntimeMetricVariant:
++    metric_id: str
++    variant_id: str
++    solution_name: str
++    implementation: type
++    spec: Any
++    checkpoint: str
++    inputs: Mapping[str, str]
++    parameters: Mapping[str, Any]
++
++
++def _expand_parameter_space(space: Any, operation: Any) -> tuple[dict[str, Any], ...]:
++    defaults = {
++        name: specification.default
++        for name, specification in getattr(operation, "parameters", {}).items()
++        if getattr(specification, "default", UNSET) is not UNSET
++    }
++    fixed = _mapping(getattr(space, "fixed", {}))
++    base = {**defaults, **fixed}
++    variants = tuple(getattr(space, "variants", ()))
++    if variants:
++        return tuple({**base, **_mapping(variant)} for variant in variants)
++
++    grid = _mapping(getattr(space, "grid", {}))
++    if not grid:
++        return (base,)
++    names = tuple(sorted(grid))
++    return tuple(
++        {**base, **dict(zip(names, values))}
++        for values in product(*(tuple(grid[name]) for name in names))
++    )
++
++
++def _resolved_metric_variants(resolved: Any) -> tuple[_RuntimeMetricVariant, ...]:
++    variants = []
++    for metric in getattr(resolved, "metrics", ()):
++        operation = metric.spec.operations["expertise"]
++        for parameters in _expand_parameter_space(metric.params, operation):
++            variant_id = _fingerprint(
++                {
++                    "metric_id": metric.id,
++                    "solution_name": metric.name,
++                    "checkpoint": metric.checkpoint,
++                    "inputs": dict(metric.inputs),
++                    "parameters": parameters,
++                }
++            )
++            variants.append(
++                _RuntimeMetricVariant(
++                    metric_id=metric.id,
++                    variant_id=variant_id,
++                    solution_name=metric.name,
++                    implementation=metric.implementation,
++                    spec=metric.spec,
++                    checkpoint=metric.checkpoint,
++                    inputs=metric.inputs,
++                    parameters=parameters,
++                )
++            )
++    return tuple(variants)
++
++
++def _flatten_metric_candidates(value: Any) -> tuple[Any, ...]:
++    if value is None:
++        return ()
++    if isinstance(value, Mapping):
++        return tuple(item for group in value.values() for item in group)
++    return tuple(value)
++
++
++def _plan_metric_variants(plan: Any, resolved: Any) -> tuple[Any, ...]:
++    for name in ("metric_variants", "metrics"):
++        candidates = _flatten_metric_candidates(getattr(plan, name, None))
++        if candidates and all(hasattr(item, "implementation") for item in candidates):
++            return candidates
++    return _resolved_metric_variants(resolved)
++
++
++@dataclass(frozen=True)
++class _SyntheticWorkUnit:
++    work_unit_id: str
++    sample: Any
++    embedding: Any
++    watermark: Any
++    embedding_seed: int
++    cases: tuple[Any, ...]
++
++
++def _iter_work_units(plan: Any) -> Iterable[Any]:
++    iterator = getattr(plan, "iter_work_units", None)
++    if callable(iterator):
++        yield from iterator()
++        return
++
++    groups: dict[str, list[Any]] = defaultdict(list)
++    for case in plan.iter_cases():
++        groups[str(case.work_unit_id)].append(case)
++    for work_unit_id, cases in groups.items():
++        first = cases[0]
++        yield _SyntheticWorkUnit(
++            work_unit_id=work_unit_id,
++            sample=first.sample,
++            embedding=first.embedding,
++            watermark=first.watermark,
++            embedding_seed=int(first.embedding_seed),
++            cases=tuple(cases),
++        )
++
++
++def _unit_cases(unit: Any) -> tuple[Any, ...]:
++    cases = tuple(_attribute(unit, "cases", default=()))
++    if not cases:
++        raise ExecutionError(f"work unit {_identifier(unit, 'work_unit_id')!r} contains no cases")
++    return cases
++
++
++def _sample_id(sample: Any) -> str:
++    return _identifier(sample, "sample_id", "id", "relative_path")
++
++
++def _embedding_variant_id(embedding: Any) -> str:
++    return _identifier(embedding, "variant_id", "embedding_variant_id", "id")
++
++
++def _attack_variant_id(case: Any) -> str:
++    attack = _attribute(case, "attack", "attack_scenario")
++    return _identifier(attack, "variant_id", "attack_variant_id", "id", "scenario_id")
++
++
++def _metric_variant_id(metric: Any) -> str:
++    return _identifier(metric, "variant_id", "metric_variant_id", "id")
++
++
++def _metric_id(metric: Any) -> str:
++    return _identifier(metric, "metric_id", "id")
++
++
++def _checkpoint(metric: Any) -> str:
++    return _identifier(metric, "checkpoint")
++
++
++def _case_status(metrics: tuple[MetricResult, ...]) -> ResultStatus:
++    if any(metric.status is ResultStatus.FAILED for metric in metrics):
++        return ResultStatus.PARTIAL
++    return ResultStatus.SUCCESS
++
++
++def _work_unit_status(
++    metrics: tuple[MetricResult, ...],
++    cases: tuple[CaseResult, ...],
++) -> ResultStatus:
++    if any(case.status is ResultStatus.FAILED for case in cases):
++        return ResultStatus.PARTIAL
++    if any(case.status is ResultStatus.PARTIAL for case in cases):
++        return ResultStatus.PARTIAL
++    if any(metric.status is ResultStatus.FAILED for metric in metrics):
++        return ResultStatus.PARTIAL
++    return ResultStatus.SUCCESS
++
++
++class SerialExecutor:
++    """Execute work units serially in the current Python process."""
++
++    def __init__(
++        self,
++        plan: Any,
++        resolved: Any,
++        dataset_source: Any,
++        *,
++        adapters: Optional[RuntimeAdapterRegistry] = None,
++        erasure_policy: ErasurePolicy = ErasurePolicy.COUNT_AS_ERROR,
++        verify_integrity: bool = True,
++        fail_fast: Optional[bool] = None,
++    ) -> None:
++        self.plan = plan
++        self.resolved = resolved
++        self.dataset_source = dataset_source
++        self.adapters = RuntimeAdapterRegistry() if adapters is None else adapters
++        self.erasure_policy = ErasurePolicy(erasure_policy)
++        if not isinstance(verify_integrity, bool):
++            raise TypeError("verify_integrity must be a boolean")
++        self.verify_integrity = verify_integrity
++        configured_fail_fast = bool(resolved.config.execution.fail_fast)
++        self.fail_fast = configured_fail_fast if fail_fast is None else fail_fast
++        if not isinstance(self.fail_fast, bool):
++            raise TypeError("fail_fast must be a boolean")
++        self.metric_variants = _plan_metric_variants(plan, resolved)
++        self.metrics_by_checkpoint = {
++            checkpoint: tuple(
++                metric for metric in self.metric_variants if _checkpoint(metric) == checkpoint
++            )
++            for checkpoint in ("after_embedding", "after_attack", "after_extraction")
++        }
++
++    def execute(self) -> ExecutionResult:
++        """Execute the entire plan and return immutable in-memory results."""
++
++        started = datetime.now(timezone.utc)
++        started_clock = perf_counter()
++        work_unit_results = tuple(self._execute_work_unit(unit) for unit in _iter_work_units(self.plan))
++        finished = datetime.now(timezone.utc)
++        return ExecutionResult(
++            plan_fingerprint=str(getattr(self.plan, "fingerprint", "")),
++            catalog_fingerprint=str(self.resolved.catalog_fingerprint),
++            manifest_fingerprint=str(getattr(self.plan.manifest, "fingerprint", "")),
++            erasure_policy=self.erasure_policy.value,
++            work_units=work_unit_results,
++            duration_seconds=perf_counter() - started_clock,
++            started_at_utc=started.isoformat(),
++            finished_at_utc=finished.isoformat(),
++            metadata=(
++                ("declared_cases", int(getattr(self.plan.counts, "case_count", len(work_unit_results)))),
++                ("declared_work_units", int(getattr(self.plan.counts, "work_unit_count", len(work_unit_results)))),
++            ),
++        )
++
++    run = execute
++
++    def _execute_work_unit(self, unit: Any) -> WorkUnitResult:
++        cases = _unit_cases(unit)
++        work_unit_id = _identifier(unit, "work_unit_id")
++        sample = _attribute(unit, "sample")
++        embedding = _attribute(unit, "embedding")
++        watermark_reference = _attribute(unit, "watermark")
++        embedding_seed = int(
++            _attribute(unit, "embedding_seed", default=_attribute(cases[0], "embedding_seed"))
++        )
++        timings = []
++
++        try:
++            start = perf_counter()
++            original = self.dataset_source.load(
++                sample,
++                verify_integrity=self.verify_integrity,
++            )
++            timings.append(OperationTiming("load_image", perf_counter() - start))
++
++            start = perf_counter()
++            watermark = materialize_watermark(watermark_reference, self.resolved.config)
++            timings.append(OperationTiming("materialize_watermark", perf_counter() - start))
++
++            start = perf_counter()
++            embedded = self.adapters.embedding(embedding).embed(
++                embedding,
++                original,
++                watermark,
++                seed=embedding_seed,
++            )
++            timings.append(OperationTiming("embedding", perf_counter() - start))
++        except Exception as error:
++            return self._failed_work_unit(unit, cases, error, timings)
++
++        artifacts = {
++            "original_image": original,
++            "embedded_image": embedded,
++            "original_watermark": watermark,
++        }
++        unit_metrics = self._evaluate_metrics(
++            self.metrics_by_checkpoint["after_embedding"],
++            artifacts,
++            work_unit_id=work_unit_id,
++            case_id=None,
++        )
++        case_results = tuple(
++            self._execute_case(case, embedded, original, watermark) for case in cases
++        )
++        return WorkUnitResult(
++            work_unit_id=work_unit_id,
++            sample_id=_sample_id(sample),
++            embedding_variant_id=_embedding_variant_id(embedding),
++            status=_work_unit_status(unit_metrics, case_results),
++            cases=case_results,
++            metrics=unit_metrics,
++            timings=tuple(timings),
++        )
++
++    def _failed_work_unit(
++        self,
++        unit: Any,
++        cases: tuple[Any, ...],
++        error: BaseException,
++        timings: list[OperationTiming],
++    ) -> WorkUnitResult:
++        stage = self._failure_stage(timings)
++        if self.fail_fast:
++            raise ExecutionAbortedError(stage, error) from error
++        operation_error = OperationError.from_exception(stage, error)
++        sample = _attribute(unit, "sample")
++        embedding = _attribute(unit, "embedding")
++        skipped = tuple(
++            CaseResult(
++                case_id=str(case.case_id),
++                work_unit_id=str(case.work_unit_id),
++                ordinal=int(case.ordinal),
++                sample_id=_sample_id(case.sample),
++                embedding_variant_id=_embedding_variant_id(case.embedding),
++                attack_variant_id=_attack_variant_id(case),
++                repeat_index=int(case.repeat_index),
++                status=ResultStatus.SKIPPED,
++                error=operation_error,
++            )
++            for case in cases
++        )
++        return WorkUnitResult(
++            work_unit_id=_identifier(unit, "work_unit_id"),
++            sample_id=_sample_id(sample),
++            embedding_variant_id=_embedding_variant_id(embedding),
++            status=ResultStatus.FAILED,
++            cases=skipped,
++            timings=tuple(timings),
++            error=operation_error,
++        )
++
++    @staticmethod
++    def _failure_stage(timings: list[OperationTiming]) -> str:
++        completed = {timing.stage for timing in timings}
++        if "load_image" not in completed:
++            return "load_image"
++        if "materialize_watermark" not in completed:
++            return "materialize_watermark"
++        return "embedding"
++
++    def _execute_case(
++        self,
++        case: Any,
++        embedded: Any,
++        original: Any,
++        watermark: Any,
++    ) -> CaseResult:
++        case_id = str(case.case_id)
++        work_unit_id = str(case.work_unit_id)
++        timings = []
++        metrics = []
++        attacked = embedded.copy()
++
++        try:
++            for step_index, step in enumerate(case.attack.steps):
++                start = perf_counter()
++                seed = derive_runtime_seed(
++                    int(case.case_seed),
++                    "attack",
++                    step_index,
++                    _identifier(step, "variant_id", "id"),
++                    _solution_name(step),
++                )
++                attacked = self.adapters.attack(step).apply(step, attacked, seed=seed)
++                timings.append(
++                    OperationTiming(
++                        f"attack[{step_index}]:{_solution_name(step)}",
++                        perf_counter() - start,
++                    )
++                )
++        except Exception as error:
++            return self._failed_case(case, "attack", error, metrics, timings)
++
++        artifacts = {
++            "original_image": original,
++            "embedded_image": embedded,
++            "attacked_image": attacked,
++            "original_watermark": watermark,
++        }
++        metrics.extend(
++            self._evaluate_metrics(
++                self.metrics_by_checkpoint["after_attack"],
++                artifacts,
++                work_unit_id=work_unit_id,
++                case_id=case_id,
++            )
++        )
++
++        try:
++            start = perf_counter()
++            extracted = self.adapters.embedding(case.embedding).extract(
++                case.embedding,
++                attacked,
++                num_bits=watermark.length,
++            )
++            timings.append(OperationTiming("extraction", perf_counter() - start))
++        except Exception as error:
++            return self._failed_case(case, "extraction", error, metrics, timings)
++
++        artifacts["extracted_watermark"] = extracted
++        metrics.extend(
++            self._evaluate_metrics(
++                self.metrics_by_checkpoint["after_extraction"],
++                artifacts,
++                work_unit_id=work_unit_id,
++                case_id=case_id,
++            )
++        )
++        metric_results = tuple(metrics)
++        return CaseResult(
++            case_id=case_id,
++            work_unit_id=work_unit_id,
++            ordinal=int(case.ordinal),
++            sample_id=_sample_id(case.sample),
++            embedding_variant_id=_embedding_variant_id(case.embedding),
++            attack_variant_id=_attack_variant_id(case),
++            repeat_index=int(case.repeat_index),
++            status=_case_status(metric_results),
++            metrics=metric_results,
++            timings=tuple(timings),
++        )
++
++    def _failed_case(
++        self,
++        case: Any,
++        stage: str,
++        error: BaseException,
++        metrics: list[MetricResult],
++        timings: list[OperationTiming],
++    ) -> CaseResult:
++        if self.fail_fast:
++            raise ExecutionAbortedError(stage, error) from error
++        operation_error = OperationError.from_exception(stage, error)
++        return CaseResult(
++            case_id=str(case.case_id),
++            work_unit_id=str(case.work_unit_id),
++            ordinal=int(case.ordinal),
++            sample_id=_sample_id(case.sample),
++            embedding_variant_id=_embedding_variant_id(case.embedding),
++            attack_variant_id=_attack_variant_id(case),
++            repeat_index=int(case.repeat_index),
++            status=ResultStatus.FAILED,
++            metrics=tuple(metrics),
++            timings=tuple(timings),
++            error=operation_error,
++        )
++
++    def _evaluate_metrics(
++        self,
++        metrics: tuple[Any, ...],
++        artifacts: Mapping[str, Any],
++        *,
++        work_unit_id: str,
++        case_id: Optional[str],
++    ) -> tuple[MetricResult, ...]:
++        results = []
++        for metric in metrics:
++            start = perf_counter()
++            try:
++                value = self.adapters.metric(metric).evaluate(
++                    metric,
++                    artifacts,
++                    erasure_policy=self.erasure_policy,
++                )
++            except Exception as error:
++                if self.fail_fast:
++                    raise ExecutionAbortedError(
++                        f"metric:{_metric_id(metric) or _solution_name(metric)}",
++                        error,
++                    ) from error
++                results.append(
++                    MetricResult(
++                        metric_id=_metric_id(metric),
++                        metric_variant_id=_metric_variant_id(metric),
++                        solution_name=_solution_name(metric),
++                        checkpoint=_checkpoint(metric),
++                        work_unit_id=work_unit_id,
++                        case_id=case_id,
++                        status=ResultStatus.FAILED,
++                        value=None,
++                        parameters=_parameters(metric),
++                        duration_seconds=perf_counter() - start,
++                        error=OperationError.from_exception("metric", error),
++                    )
++                )
++            else:
++                results.append(
++                    MetricResult(
++                        metric_id=_metric_id(metric),
++                        metric_variant_id=_metric_variant_id(metric),
++                        solution_name=_solution_name(metric),
++                        checkpoint=_checkpoint(metric),
++                        work_unit_id=work_unit_id,
++                        case_id=case_id,
++                        status=ResultStatus.SUCCESS,
++                        value=value,
++                        parameters=_parameters(metric),
++                        duration_seconds=perf_counter() - start,
++                    )
++                )
++        return tuple(results)
++
++
++__all__ = [
++    "ExecutionAbortedError",
++    "ExecutionError",
++    "SerialExecutor",
++    "UnsupportedExecutionBackendError",
++]
+diff --git a/dwarf/pipeline/pipeline.py b/dwarf/pipeline/pipeline.py
+new file mode 100644
+index 0000000..02527c7
+--- /dev/null
++++ b/dwarf/pipeline/pipeline.py
+@@ -0,0 +1,124 @@
++# ruff: noqa: UP045
++"""High-level facade for validating, planning and serially executing experiments."""
++
++from __future__ import annotations
++
++from pathlib import Path
++from typing import Optional, Union
++
++from dwarf.pipeline.catalog import SolutionCatalog
++from dwarf.pipeline.config import ExperimentConfig
++from dwarf.pipeline.config_loader import load_experiment_config
++from dwarf.pipeline.datasets import DirectoryDatasetSource
++from dwarf.pipeline.executors import SerialExecutor, UnsupportedExecutionBackendError
++from dwarf.pipeline.planner import ExperimentPlan, ExperimentPlanner
++from dwarf.pipeline.results import ExecutionResult
++from dwarf.pipeline.runtime import ErasurePolicy, RuntimeAdapterRegistry
++
++
++class Pipeline:
++    """Lazy facade joining all currently implemented experiment pipeline stages."""
++
++    def __init__(
++        self,
++        config: ExperimentConfig,
++        *,
++        catalog: Optional[SolutionCatalog] = None,
++        adapters: Optional[RuntimeAdapterRegistry] = None,
++    ) -> None:
++        if not isinstance(config, ExperimentConfig):
++            raise TypeError("config must be an ExperimentConfig")
++        self.config = config
++        self._catalog = catalog
++        self.adapters = RuntimeAdapterRegistry() if adapters is None else adapters
++        self._resolved = None
++        self._dataset_source = None
++        self._manifest = None
++        self._plan = None
++
++    @classmethod
++    def from_yaml(
++        cls,
++        path: Union[str, Path],
++        *,
++        resolve_paths: bool = True,
++        catalog: Optional[SolutionCatalog] = None,
++        adapters: Optional[RuntimeAdapterRegistry] = None,
++    ) -> Pipeline:
++        """Load a YAML configuration and create a lazy pipeline facade."""
++
++        return cls(
++            load_experiment_config(path, resolve_paths=resolve_paths),
++            catalog=catalog,
++            adapters=adapters,
++        )
++
++    @property
++    def catalog(self) -> SolutionCatalog:
++        if self._catalog is None:
++            self._catalog = SolutionCatalog.discover(plugins=self.config.plugins)
++        return self._catalog
++
++    @property
++    def resolved(self):
++        if self._resolved is None:
++            self._resolved = self.catalog.resolve(self.config)
++        return self._resolved
++
++    @property
++    def dataset_source(self) -> DirectoryDatasetSource:
++        if self._dataset_source is None:
++            self._dataset_source = DirectoryDatasetSource(self.config.dataset)
++        return self._dataset_source
++
++    @property
++    def manifest(self):
++        if self._manifest is None:
++            self._manifest = self.dataset_source.build_manifest(seed=self.config.experiment.seed)
++        return self._manifest
++
++    def validate(self):
++        """Run structural and semantic validation and return the resolved experiment."""
++
++        return self.resolved
++
++    def plan(self) -> ExperimentPlan:
++        """Build and cache a deterministic experiment plan."""
++
++        if self._plan is None:
++            self._plan = ExperimentPlanner(self.resolved, self.manifest).build()
++        return self._plan
++
++    def run(
++        self,
++        *,
++        erasure_policy: ErasurePolicy = ErasurePolicy.COUNT_AS_ERROR,
++        verify_integrity: bool = True,
++        fail_fast: Optional[bool] = None,
++    ) -> ExecutionResult:
++        """Execute the prepared plan with the configured backend."""
++
++        backend = self.config.execution.backend
++        if backend != "serial":
++            raise UnsupportedExecutionBackendError(
++                f"execution backend {backend!r} is not implemented; use backend='serial'"
++            )
++        executor = SerialExecutor(
++            self.plan(),
++            self.resolved,
++            self.dataset_source,
++            adapters=self.adapters,
++            erasure_policy=erasure_policy,
++            verify_integrity=verify_integrity,
++            fail_fast=fail_fast,
++        )
++        return executor.execute()
++
++    def reset_runtime_state(self) -> None:
++        """Discard the cached manifest and plan while retaining validated metadata."""
++
++        self._manifest = None
++        self._plan = None
++
++
++__all__ = ["Pipeline"]
+diff --git a/dwarf/pipeline/results.py b/dwarf/pipeline/results.py
+new file mode 100644
+index 0000000..39f7678
+--- /dev/null
++++ b/dwarf/pipeline/results.py
+@@ -0,0 +1,293 @@
++# ruff: noqa: UP045
++"""Immutable result records produced by experiment executors."""
++
++from __future__ import annotations
++
++import math
++from dataclasses import dataclass, field
++from enum import Enum
++from typing import Any, Optional
++
++
++class ResultStatus(str, Enum):
++    """Execution status shared by work units, cases and metric evaluations."""
++
++    SUCCESS = "success"
++    PARTIAL = "partial"
++    FAILED = "failed"
++    SKIPPED = "skipped"
++
++
++@dataclass(frozen=True)
++class OperationError:
++    """Serializable description of one failed pipeline operation."""
++
++    stage: str
++    exception_type: str
++    message: str
++
++    @classmethod
++    def from_exception(cls, stage: str, error: BaseException) -> OperationError:
++        if not isinstance(stage, str) or not stage:
++            raise ValueError("stage must be a non-empty string")
++        return cls(
++            stage=stage,
++            exception_type=f"{type(error).__module__}.{type(error).__qualname__}",
++            message=str(error),
++        )
++
++    def to_dict(self) -> dict[str, str]:
++        return {
++            "stage": self.stage,
++            "exception_type": self.exception_type,
++            "message": self.message,
++        }
++
++
++@dataclass(frozen=True)
++class OperationTiming:
++    """Elapsed wall-clock time of one named operation."""
++
++    stage: str
++    duration_seconds: float
++
++    def __post_init__(self) -> None:
++        if not isinstance(self.stage, str) or not self.stage:
++            raise ValueError("stage must be a non-empty string")
++        if isinstance(self.duration_seconds, bool) or not isinstance(
++            self.duration_seconds, (int, float)
++        ):
++            raise TypeError("duration_seconds must be a number")
++        duration = float(self.duration_seconds)
++        if not math.isfinite(duration) or duration < 0.0:
++            raise ValueError("duration_seconds must be a finite non-negative number")
++        object.__setattr__(self, "duration_seconds", duration)
++
++    def to_dict(self) -> dict[str, Any]:
++        return {
++            "stage": self.stage,
++            "duration_seconds": self.duration_seconds,
++        }
++
++
++@dataclass(frozen=True)
++class MetricResult:
++    """One metric evaluation at a pipeline checkpoint."""
++
++    metric_id: str
++    metric_variant_id: str
++    solution_name: str
++    checkpoint: str
++    work_unit_id: str
++    case_id: Optional[str]
++    status: ResultStatus
++    value: Optional[float]
++    parameters: tuple[tuple[str, Any], ...] = ()
++    duration_seconds: float = 0.0
++    error: Optional[OperationError] = None
++
++    def __post_init__(self) -> None:
++        object.__setattr__(self, "status", ResultStatus(self.status))
++        timing = OperationTiming("metric", self.duration_seconds)
++        object.__setattr__(self, "duration_seconds", timing.duration_seconds)
++        if self.status is ResultStatus.SUCCESS:
++            if self.value is None:
++                raise ValueError("a successful metric result requires a value")
++            value = float(self.value)
++            if math.isnan(value):
++                raise ValueError("metric value must not be NaN")
++            object.__setattr__(self, "value", value)
++            if self.error is not None:
++                raise ValueError("a successful metric result must not contain an error")
++        elif self.error is None:
++            raise ValueError("a non-successful metric result requires an error")
++
++    @property
++    def parameter_dict(self) -> dict[str, Any]:
++        return dict(self.parameters)
++
++    def to_dict(self) -> dict[str, Any]:
++        return {
++            "metric_id": self.metric_id,
++            "metric_variant_id": self.metric_variant_id,
++            "solution_name": self.solution_name,
++            "checkpoint": self.checkpoint,
++            "work_unit_id": self.work_unit_id,
++            "case_id": self.case_id,
++            "status": self.status.value,
++            "value": self.value,
++            "parameters": self.parameter_dict,
++            "duration_seconds": self.duration_seconds,
++            "error": None if self.error is None else self.error.to_dict(),
++        }
++
++
++@dataclass(frozen=True)
++class CaseResult:
++    """Result of one image/embedding/attack/repeat experiment case."""
++
++    case_id: str
++    work_unit_id: str
++    ordinal: int
++    sample_id: str
++    embedding_variant_id: str
++    attack_variant_id: str
++    repeat_index: int
++    status: ResultStatus
++    metrics: tuple[MetricResult, ...] = ()
++    timings: tuple[OperationTiming, ...] = ()
++    error: Optional[OperationError] = None
++
++    def __post_init__(self) -> None:
++        object.__setattr__(self, "status", ResultStatus(self.status))
++        object.__setattr__(self, "metrics", tuple(self.metrics))
++        object.__setattr__(self, "timings", tuple(self.timings))
++        if self.status in {ResultStatus.FAILED, ResultStatus.SKIPPED} and self.error is None:
++            raise ValueError("failed and skipped case results require an error")
++        if self.status is ResultStatus.SUCCESS and self.error is not None:
++            raise ValueError("a successful case result must not contain an error")
++
++    def to_dict(self) -> dict[str, Any]:
++        return {
++            "case_id": self.case_id,
++            "work_unit_id": self.work_unit_id,
++            "ordinal": self.ordinal,
++            "sample_id": self.sample_id,
++            "embedding_variant_id": self.embedding_variant_id,
++            "attack_variant_id": self.attack_variant_id,
++            "repeat_index": self.repeat_index,
++            "status": self.status.value,
++            "metrics": [metric.to_dict() for metric in self.metrics],
++            "timings": [timing.to_dict() for timing in self.timings],
++            "error": None if self.error is None else self.error.to_dict(),
++        }
++
++
++@dataclass(frozen=True)
++class WorkUnitResult:
++    """Result of one reusable image/watermark/embedding work unit."""
++
++    work_unit_id: str
++    sample_id: str
++    embedding_variant_id: str
++    status: ResultStatus
++    cases: tuple[CaseResult, ...]
++    metrics: tuple[MetricResult, ...] = ()
++    timings: tuple[OperationTiming, ...] = ()
++    error: Optional[OperationError] = None
++
++    def __post_init__(self) -> None:
++        object.__setattr__(self, "status", ResultStatus(self.status))
++        object.__setattr__(self, "cases", tuple(self.cases))
++        object.__setattr__(self, "metrics", tuple(self.metrics))
++        object.__setattr__(self, "timings", tuple(self.timings))
++        if self.status is ResultStatus.FAILED and self.error is None:
++            raise ValueError("a failed work unit result requires an error")
++
++    def to_dict(self) -> dict[str, Any]:
++        return {
++            "work_unit_id": self.work_unit_id,
++            "sample_id": self.sample_id,
++            "embedding_variant_id": self.embedding_variant_id,
++            "status": self.status.value,
++            "cases": [case.to_dict() for case in self.cases],
++            "metrics": [metric.to_dict() for metric in self.metrics],
++            "timings": [timing.to_dict() for timing in self.timings],
++            "error": None if self.error is None else self.error.to_dict(),
++        }
++
++
++@dataclass(frozen=True)
++class ExecutionResult:
++    """Complete in-memory result of one executor run."""
++
++    plan_fingerprint: str
++    catalog_fingerprint: str
++    manifest_fingerprint: str
++    erasure_policy: str
++    work_units: tuple[WorkUnitResult, ...]
++    duration_seconds: float
++    started_at_utc: str
++    finished_at_utc: str
++    backend: str = "serial"
++    metadata: tuple[tuple[str, Any], ...] = field(default_factory=tuple)
++
++    def __post_init__(self) -> None:
++        object.__setattr__(self, "work_units", tuple(self.work_units))
++        timing = OperationTiming("execution", self.duration_seconds)
++        object.__setattr__(self, "duration_seconds", timing.duration_seconds)
++
++    @property
++    def cases(self) -> tuple[CaseResult, ...]:
++        return tuple(case for unit in self.work_units for case in unit.cases)
++
++    @property
++    def metrics(self) -> tuple[MetricResult, ...]:
++        return tuple(
++            metric
++            for unit in self.work_units
++            for metric in (*unit.metrics, *(item for case in unit.cases for item in case.metrics))
++        )
++
++    def _count_cases(self, status: ResultStatus) -> int:
++        return sum(case.status is status for case in self.cases)
++
++    @property
++    def successful_case_count(self) -> int:
++        return self._count_cases(ResultStatus.SUCCESS)
++
++    @property
++    def partial_case_count(self) -> int:
++        return self._count_cases(ResultStatus.PARTIAL)
++
++    @property
++    def failed_case_count(self) -> int:
++        return self._count_cases(ResultStatus.FAILED)
++
++    @property
++    def skipped_case_count(self) -> int:
++        return self._count_cases(ResultStatus.SKIPPED)
++
++    @property
++    def successful_metric_count(self) -> int:
++        return sum(metric.status is ResultStatus.SUCCESS for metric in self.metrics)
++
++    @property
++    def failed_metric_count(self) -> int:
++        return sum(metric.status is ResultStatus.FAILED for metric in self.metrics)
++
++    def to_dict(self) -> dict[str, Any]:
++        return {
++            "backend": self.backend,
++            "plan_fingerprint": self.plan_fingerprint,
++            "catalog_fingerprint": self.catalog_fingerprint,
++            "manifest_fingerprint": self.manifest_fingerprint,
++            "erasure_policy": self.erasure_policy,
++            "duration_seconds": self.duration_seconds,
++            "started_at_utc": self.started_at_utc,
++            "finished_at_utc": self.finished_at_utc,
++            "metadata": dict(self.metadata),
++            "summary": {
++                "work_units": len(self.work_units),
++                "cases": len(self.cases),
++                "successful_cases": self.successful_case_count,
++                "partial_cases": self.partial_case_count,
++                "failed_cases": self.failed_case_count,
++                "skipped_cases": self.skipped_case_count,
++                "metrics": len(self.metrics),
++                "successful_metrics": self.successful_metric_count,
++                "failed_metrics": self.failed_metric_count,
++            },
++            "work_units": [unit.to_dict() for unit in self.work_units],
++        }
++
++
++__all__ = [
++    "CaseResult",
++    "ExecutionResult",
++    "MetricResult",
++    "OperationError",
++    "OperationTiming",
++    "ResultStatus",
++    "WorkUnitResult",
++]
+diff --git a/dwarf/pipeline/runtime.py b/dwarf/pipeline/runtime.py
+new file mode 100644
+index 0000000..ebeefae
+--- /dev/null
++++ b/dwarf/pipeline/runtime.py
+@@ -0,0 +1,422 @@
++# ruff: noqa: UP045
++"""Runtime adapters joining canonical pipeline artifacts to DWARF solutions."""
++
++from __future__ import annotations
++
++import hashlib
++import json
++from collections.abc import Mapping
++from enum import Enum
++from typing import Any, Optional
++
++import numpy as np
++from PIL import Image
++
++from dwarf.pipeline.artifacts import (
++    ExtractedWatermark,
++    ImageArtifact,
++    OriginalWatermark,
++)
++from dwarf.pipeline.exceptions import ArtifactValidationError
++
++
++class ErasurePolicy(str, Enum):
++    """How a binary metric handles ``-1`` extracted watermark symbols."""
++
++    COUNT_AS_ERROR = "count_as_error"
++    IGNORE = "ignore"
++    FAIL = "fail"
++
++
++def _plain_mapping(value: Any) -> dict[str, Any]:
++    if value is None:
++        return {}
++    if isinstance(value, Mapping):
++        return dict(value)
++    if hasattr(value, "to_dict"):
++        result = value.to_dict()
++        if isinstance(result, Mapping):
++            return dict(result)
++    try:
++        return dict(value)
++    except (TypeError, ValueError) as error:
++        raise TypeError(f"expected a parameter mapping, got {type(value).__name__}") from error
++
++
++def _attribute(value: Any, *names: str, default: Any = None) -> Any:
++    for name in names:
++        if hasattr(value, name):
++            return getattr(value, name)
++    return default
++
++
++def _solution_name(value: Any) -> str:
++    name = _attribute(value, "solution_name", "name")
++    if not isinstance(name, str) or not name:
++        implementation = _attribute(value, "implementation")
++        name = getattr(implementation, "__name__", None)
++    if not isinstance(name, str) or not name:
++        raise TypeError(f"could not determine a solution name from {type(value).__name__}")
++    return name
++
++
++def _implementation(value: Any, fallback: Optional[type] = None) -> type:
++    implementation = _attribute(value, "implementation", default=fallback)
++    if not isinstance(implementation, type):
++        raise TypeError(f"could not determine an implementation for {_solution_name(value)!r}")
++    return implementation
++
++
++def _variant_parameters(value: Any, *names: str) -> dict[str, Any]:
++    parameters = _attribute(value, *names, default={})
++    return _plain_mapping(parameters)
++
++
++def _looks_like_dimension_error(error: BaseException) -> bool:
++    message = str(error).lower()
++    fragments = (
++        "dimension",
++        "dimensions",
++        "ndim",
++        "shape",
++        "2-dimensional",
++        "2 dimensional",
++        "number of dimensions",
++        "buffer has wrong number",
++    )
++    return any(fragment in message for fragment in fragments)
++
++
++def _normalise_rgb_result(value: Any, *, operation: str) -> ImageArtifact:
++    if isinstance(value, ImageArtifact):
++        return value.copy()
++    if not isinstance(value, np.ndarray):
++        raise ArtifactValidationError(
++            f"{operation} must return a numpy.ndarray or ImageArtifact, got {type(value).__name__}"
++        )
++    if value.ndim != 3 or value.shape[2] != 3:
++        raise ArtifactValidationError(
++            f"{operation} returned shape {value.shape}; expected (height, width, 3)"
++        )
++    if value.dtype != np.uint8:
++        value = np.clip(np.rint(value.astype(np.float64)), 0, 255).astype(np.uint8)
++    return ImageArtifact(np.ascontiguousarray(value))
++
++
++def _extract_luma(image: ImageArtifact) -> tuple[np.ndarray, np.ndarray]:
++    ycbcr = np.asarray(image.to_pil().convert("YCbCr"), dtype=np.uint8).copy()
++    luma = np.ascontiguousarray(ycbcr[..., 0], dtype=np.float64)
++    return ycbcr, luma
++
++
++def _replace_luma(ycbcr: np.ndarray, luma: np.ndarray) -> ImageArtifact:
++    if not isinstance(luma, np.ndarray) or luma.ndim != 2:
++        raise ArtifactValidationError(
++            "legacy luminance embedding must return a two-dimensional array, "
++            f"got {getattr(luma, 'shape', None)}"
++        )
++    if luma.shape != ycbcr.shape[:2]:
++        raise ArtifactValidationError(
++            f"legacy luminance embedding returned shape {luma.shape}, expected {ycbcr.shape[:2]}"
++        )
++    ycbcr = ycbcr.copy()
++    ycbcr[..., 0] = np.clip(np.rint(luma.astype(np.float64)), 0, 255).astype(np.uint8)
++    rgb = np.asarray(Image.fromarray(ycbcr, "YCbCr").convert("RGB"), dtype=np.uint8)
++    return ImageArtifact(rgb)
++
++
++def derive_runtime_seed(case_seed: int, domain: str, *parts: Any) -> int:
++    """Derive one deterministic 63-bit seed for a runtime sub-operation."""
++
++    if isinstance(case_seed, bool) or not isinstance(case_seed, int) or case_seed < 0:
++        raise ValueError("case_seed must be a non-negative integer")
++    if not isinstance(domain, str) or not domain:
++        raise ValueError("domain must be a non-empty string")
++    payload = json.dumps(
++        {"case_seed": case_seed, "domain": domain, "parts": parts},
++        allow_nan=False,
++        ensure_ascii=False,
++        separators=(",", ":"),
++        sort_keys=True,
++        default=str,
++    ).encode("utf-8")
++    digest = hashlib.sha256(payload).digest()
++    return int.from_bytes(digest[:8], byteorder="big", signed=False) & (2**63 - 1)
++
++
++def materialize_watermark(reference: Any, config: Any) -> OriginalWatermark:
++    """Materialize one fixed or seeded random watermark from a plan reference."""
++
++    kind = str(_attribute(reference, "kind", "type", default=""))
++    if "." in kind:
++        kind = kind.rsplit(".", 1)[-1]
++    kind = kind.lower()
++
++    configured = getattr(config, "watermark", config)
++    configured_type = str(getattr(configured, "type", "")).lower()
++    if kind in {"fixed", "fixed_bits"} or configured_type == "fixed_bits":
++        bits = _attribute(reference, "bits", default=getattr(configured, "bits", None))
++        if not isinstance(bits, str):
++            raise ArtifactValidationError("fixed watermark reference does not provide a bit string")
++        watermark = OriginalWatermark.from_bit_string(bits)
++    else:
++        length = _attribute(reference, "length", default=getattr(configured, "length", None))
++        seed = _attribute(reference, "seed")
++        if isinstance(length, bool) or not isinstance(length, int) or length <= 0:
++            raise ArtifactValidationError("random watermark reference requires a positive length")
++        if isinstance(seed, bool) or not isinstance(seed, int) or seed < 0:
++            raise ArtifactValidationError("random watermark reference requires a non-negative seed")
++        rng = np.random.default_rng(seed)
++        watermark = OriginalWatermark(rng.integers(0, 2, size=length, dtype=np.uint8))
++
++    expected_length = _attribute(reference, "length")
++    if expected_length is not None and watermark.length != int(expected_length):
++        raise ArtifactValidationError(
++            f"materialized watermark length {watermark.length} does not match plan length {expected_length}"
++        )
++    return watermark
++
++
++class EmbeddingRuntimeAdapter:
++    """Adapter for one embedding/extraction implementation."""
++
++    def embed(
++        self,
++        variant: Any,
++        image: ImageArtifact,
++        watermark: OriginalWatermark,
++        *,
++        seed: Optional[int] = None,
++    ) -> ImageArtifact:
++        implementation = _implementation(variant)
++        parameters = _variant_parameters(
++            variant,
++            "embedding_parameters",
++            "embedding_params",
++            "parameters",
++        )
++        if seed is not None and "seed" not in parameters:
++            operation = _attribute(_attribute(variant, "spec"), "operations", default={})
++            embedding_spec = operation.get("embedding") if isinstance(operation, Mapping) else None
++            accepted = getattr(embedding_spec, "parameters", {})
++            if "seed" in accepted:
++                parameters["seed"] = seed
++
++        try:
++            result = implementation.embedding(
++                input_image=image.array.copy(),
++                watermark_bits=watermark.mutable_copy(dtype=np.uint8),
++                **parameters,
++            )
++        except (TypeError, ValueError) as direct_error:
++            if not _looks_like_dimension_error(direct_error):
++                raise
++            ycbcr, luma = _extract_luma(image)
++            result = implementation.embedding(
++                input_image=luma,
++                watermark_bits=watermark.mutable_copy(dtype=np.int32),
++                **parameters,
++            )
++            return _replace_luma(ycbcr, np.asarray(result))
++
++        if isinstance(result, np.ndarray) and result.ndim == 2:
++            ycbcr, _ = _extract_luma(image)
++            return _replace_luma(ycbcr, result)
++        return _normalise_rgb_result(result, operation=f"{_solution_name(variant)}.embedding")
++
++    def extract(
++        self,
++        variant: Any,
++        image: ImageArtifact,
++        *,
++        num_bits: int,
++    ) -> ExtractedWatermark:
++        implementation = _implementation(variant)
++        parameters = _variant_parameters(
++            variant,
++            "extraction_parameters",
++            "extraction_params",
++        )
++        try:
++            result = implementation.extraction(
++                input_image=image.array.copy(),
++                num_bits=num_bits,
++                **parameters,
++            )
++        except (TypeError, ValueError) as direct_error:
++            if not _looks_like_dimension_error(direct_error):
++                raise
++            _, luma = _extract_luma(image)
++            result = implementation.extraction(
++                input_image=luma,
++                num_bits=num_bits,
++                **parameters,
++            )
++        return ExtractedWatermark(np.asarray(result).reshape(-1))
++
++
++class AttackRuntimeAdapter:
++    """Adapter for canonical RGB attack solutions."""
++
++    def apply(
++        self,
++        step: Any,
++        image: ImageArtifact,
++        *,
++        seed: Optional[int] = None,
++    ) -> ImageArtifact:
++        implementation = _implementation(step)
++        parameters = _variant_parameters(step, "parameters", "params")
++        spec = _attribute(step, "spec")
++        operations = getattr(spec, "operations", {}) if spec is not None else {}
++        attack_spec = operations.get("attack") if isinstance(operations, Mapping) else None
++        accepted = getattr(attack_spec, "parameters", {})
++        if seed is not None and "seed" in accepted and "seed" not in parameters:
++            parameters["seed"] = seed
++        result = implementation.attack(input_image=image.array.copy(), **parameters)
++        return _normalise_rgb_result(result, operation=f"{_solution_name(step)}.attack")
++
++
++class MetricRuntimeAdapter:
++    """Adapter converting canonical artifacts to one metric call."""
++
++    def evaluate(
++        self,
++        metric: Any,
++        artifacts: Mapping[str, Any],
++        *,
++        erasure_policy: ErasurePolicy,
++    ) -> float:
++        implementation = _implementation(metric)
++        parameters = _variant_parameters(metric, "parameters", "params")
++        inputs = _plain_mapping(_attribute(metric, "inputs", default={}))
++        kwargs = {
++            argument: self._metric_value(
++                _solution_name(metric),
++                artifact_name,
++                artifacts[artifact_name],
++                artifacts,
++                erasure_policy,
++            )
++            for argument, artifact_name in inputs.items()
++        }
++        value = implementation.expertise(**kwargs, **parameters)
++        if isinstance(value, bool) or not isinstance(value, (int, float, np.number)):
++            raise TypeError(
++                f"{_solution_name(metric)}.expertise must return a number, got {type(value).__name__}"
++            )
++        value = float(value)
++        if np.isnan(value):
++            raise ValueError(f"{_solution_name(metric)}.expertise returned NaN")
++        return value
++
++    def _metric_value(
++        self,
++        solution_name: str,
++        artifact_name: str,
++        value: Any,
++        artifacts: Mapping[str, Any],
++        erasure_policy: ErasurePolicy,
++    ) -> Any:
++        if isinstance(value, ImageArtifact):
++            return value.array.copy()
++        if solution_name == "BER":
++            return self._ber_value(artifact_name, value, artifacts, erasure_policy)
++        if isinstance(value, OriginalWatermark):
++            return value.mutable_copy(dtype=np.uint8)
++        if isinstance(value, ExtractedWatermark):
++            return value.mutable_copy(dtype=np.int8)
++        return value
++
++    def _ber_value(
++        self,
++        artifact_name: str,
++        value: Any,
++        artifacts: Mapping[str, Any],
++        policy: ErasurePolicy,
++    ) -> str:
++        if isinstance(value, OriginalWatermark):
++            if policy is not ErasurePolicy.IGNORE:
++                return value.to_bit_string()
++            extracted = artifacts.get("extracted_watermark")
++            if not isinstance(extracted, ExtractedWatermark):
++                return value.to_bit_string()
++            mask = extracted.values != -1
++            if not np.any(mask):
++                raise ArtifactValidationError("BER is undefined because all extracted bits are erasures")
++            return "".join(str(int(item)) for item in value.values[mask])
++
++        if not isinstance(value, ExtractedWatermark):
++            raise ArtifactValidationError(
++                f"BER input {artifact_name!r} must be a watermark artifact"
++            )
++        if not value.has_erasures:
++            return value.to_bit_string()
++        if policy is ErasurePolicy.FAIL:
++            raise ArtifactValidationError(
++                f"BER cannot evaluate {value.erasure_count} erased watermark bits"
++            )
++        original = artifacts.get("original_watermark")
++        if not isinstance(original, OriginalWatermark):
++            raise ArtifactValidationError("BER erasure handling requires original_watermark")
++        if original.length != value.length:
++            raise ArtifactValidationError("BER erasure handling requires equal watermark lengths")
++        extracted = value.values.copy()
++        if policy is ErasurePolicy.IGNORE:
++            mask = extracted != -1
++            if not np.any(mask):
++                raise ArtifactValidationError("BER is undefined because all extracted bits are erasures")
++            extracted = extracted[mask]
++        else:
++            erased = extracted == -1
++            extracted[erased] = 1 - original.values[erased]
++        return "".join(str(int(item)) for item in extracted)
++
++
++class RuntimeAdapterRegistry:
++    """Mutable executor-local registry of solution-specific runtime adapters."""
++
++    def __init__(self) -> None:
++        self._embeddings: dict[str, EmbeddingRuntimeAdapter] = {}
++        self._attacks: dict[str, AttackRuntimeAdapter] = {}
++        self._metrics: dict[str, MetricRuntimeAdapter] = {}
++        self._default_embedding = EmbeddingRuntimeAdapter()
++        self._default_attack = AttackRuntimeAdapter()
++        self._default_metric = MetricRuntimeAdapter()
++
++    def register_embedding(self, name: str, adapter: EmbeddingRuntimeAdapter) -> None:
++        self._register(self._embeddings, name, adapter, EmbeddingRuntimeAdapter)
++
++    def register_attack(self, name: str, adapter: AttackRuntimeAdapter) -> None:
++        self._register(self._attacks, name, adapter, AttackRuntimeAdapter)
++
++    def register_metric(self, name: str, adapter: MetricRuntimeAdapter) -> None:
++        self._register(self._metrics, name, adapter, MetricRuntimeAdapter)
++
++    @staticmethod
++    def _register(target: dict[str, Any], name: str, adapter: Any, expected: type) -> None:
++        if not isinstance(name, str) or not name:
++            raise ValueError("adapter name must be a non-empty string")
++        if not isinstance(adapter, expected):
++            raise TypeError(f"adapter must be a {expected.__name__}")
++        target[name] = adapter
++
++    def embedding(self, value: Any) -> EmbeddingRuntimeAdapter:
++        return self._embeddings.get(_solution_name(value), self._default_embedding)
++
++    def attack(self, value: Any) -> AttackRuntimeAdapter:
++        return self._attacks.get(_solution_name(value), self._default_attack)
++
++    def metric(self, value: Any) -> MetricRuntimeAdapter:
++        return self._metrics.get(_solution_name(value), self._default_metric)
++
++
++__all__ = [
++    "AttackRuntimeAdapter",
++    "EmbeddingRuntimeAdapter",
++    "ErasurePolicy",
++    "MetricRuntimeAdapter",
++    "RuntimeAdapterRegistry",
++    "derive_runtime_seed",
++    "materialize_watermark",
++]
+diff --git a/examples/pipeline/dct_jpeg_serial.yaml b/examples/pipeline/dct_jpeg_serial.yaml
+new file mode 100644
+index 0000000..1ef0781
+--- /dev/null
++++ b/examples/pipeline/dct_jpeg_serial.yaml
+@@ -0,0 +1,107 @@
++schema_version: 1
++
++experiment:
++  name: dct-jpeg-serial
++  description: Serial DCT robustness evaluation under JPEG compression.
++  seed: 42
++  repeats: 1
++  max_cases: 1000000
++  allow_large_plan: false
++  tags: [frequency, serial, smoke]
++
++plugins: []
++
++dataset:
++  type: directory
++  path: ../../data/coco
++  recursive: true
++  extensions: [.png, .jpg, .jpeg]
++  include: []
++  exclude: []
++  limit: 100
++  shuffle: false
++  preprocessing:
++    color_mode: RGB
++    resize: [512, 512]
++    resample: lanczos
++    exif_transpose: true
++
++watermark:
++  type: random_bits
++  length: 64
++  scope: fixed_for_run
++
++embeddings:
++  - id: dct
++    name: DCT
++    embedding:
++      params:
++        fixed:
++          threshold: 25.0
++        grid:
++          margin: [100.0, 150.0, 200.0]
++    extraction:
++      params:
++        fixed:
++          threshold: 25.0
++
++attack_scenarios:
++  - id: clean
++    description: No attack; baseline extraction from the embedded image.
++    steps: []
++
++  - id: jpeg
++    description: Independent JPEG quality variants.
++    steps:
++      - name: Jpeg
++        params:
++          grid:
++            quality: [30, 50, 75, 90]
++
++metrics:
++  - id: embedding-psnr
++    name: PSNR
++    checkpoint: after_embedding
++    inputs:
++      original_image: original_image
++      distorted_image: embedded_image
++
++  - id: attack-psnr
++    name: PSNR
++    checkpoint: after_attack
++    inputs:
++      original_image: embedded_image
++      distorted_image: attacked_image
++
++  - id: watermark-ber
++    name: BER
++    checkpoint: after_extraction
++    inputs:
++      original_bits: original_watermark
++      extracted_bits: extracted_watermark
++    params:
++      fixed:
++        allow_length_mismatch: false
++
++execution:
++  backend: serial
++  workers: auto
++  max_in_flight: auto
++  start_method: auto
++  fail_fast: false
++  show_progress: true
++
++output:
++  directory: ../../runs
++  database: sqlite
++  database_filename: results.sqlite3
++  save_images: failures
++  exports: [csv]
++  overwrite: false
++
++report:
++  enabled: true
++  formats: [csv, html]
++  group_by: [embedding, attack_scenario, metric]
++  include_failures: true
++  float_precision: 6
+diff --git a/examples/pipeline/run_serial.py b/examples/pipeline/run_serial.py
+new file mode 100644
+index 0000000..683f1b6
+--- /dev/null
++++ b/examples/pipeline/run_serial.py
+@@ -0,0 +1,60 @@
++"""Run one serial DWARF experiment from a YAML configuration."""
++
++from __future__ import annotations
++
++import argparse
++from pathlib import Path
++
++from dwarf.pipeline.pipeline import Pipeline
++from dwarf.pipeline.runtime import ErasurePolicy
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(description=__doc__)
++    parser.add_argument(
++        "config",
++        nargs="?",
++        type=Path,
++        default=Path(__file__).with_name("dct_jpeg_serial.yaml"),
++        help="Path to a versioned experiment YAML file.",
++    )
++    parser.add_argument(
++        "--erasure-policy",
++        choices=[policy.value for policy in ErasurePolicy],
++        default=ErasurePolicy.COUNT_AS_ERROR.value,
++        help="How BER handles -1 extraction decisions.",
++    )
++    parser.add_argument(
++        "--skip-integrity-check",
++        action="store_true",
++        help="Skip checksum verification when loading dataset files.",
++    )
++    return parser
++
++
++def main() -> int:
++    args = build_parser().parse_args()
++    pipeline = Pipeline.from_yaml(args.config)
++    plan = pipeline.plan()
++    print(plan.summary())
++    print()
++
++    result = pipeline.run(
++        erasure_policy=args.erasure_policy,
++        verify_integrity=not args.skip_integrity_check,
++    )
++    print("Execution completed.")
++    print(f"Duration:           {result.duration_seconds:.3f} s")
++    print(f"Work units:         {len(result.work_units)}")
++    print(f"Cases:              {len(result.cases)}")
++    print(f"Successful cases:   {result.successful_case_count}")
++    print(f"Partial cases:      {result.partial_case_count}")
++    print(f"Failed cases:       {result.failed_case_count}")
++    print(f"Skipped cases:      {result.skipped_case_count}")
++    print(f"Metric evaluations: {len(result.metrics)}")
++    print(f"Failed metrics:     {result.failed_metric_count}")
++    return 0 if result.failed_case_count == 0 else 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+diff --git a/tests/test_pipeline_executor.py b/tests/test_pipeline_executor.py
+new file mode 100644
+index 0000000..c1c76da
+--- /dev/null
++++ b/tests/test_pipeline_executor.py
+@@ -0,0 +1,175 @@
++"""Tests for the serial experiment executor."""
++
++from types import SimpleNamespace
++
++import numpy as np
++
++from dwarf.pipeline.artifacts import ImageArtifact
++from dwarf.pipeline.executors import SerialExecutor
++from dwarf.pipeline.results import ResultStatus
++
++
++class PixelEmbedding:
++    embedding_calls = 0
++
++    @staticmethod
++    def embedding(**args):
++        PixelEmbedding.embedding_calls += 1
++        image = args["input_image"].copy()
++        bits = np.asarray(args["watermark_bits"], dtype=np.uint8)
++        image.reshape(-1, 3)[: bits.size, 0] = bits * 255
++        return image
++
++    @staticmethod
++    def extraction(**args):
++        image = args["input_image"]
++        return (image.reshape(-1, 3)[: args["num_bits"], 0] > 127).astype(np.int8)
++
++
++class AddAttack:
++    received_first_pixels = []
++
++    @staticmethod
++    def attack(**args):
++        image = args["input_image"]
++        AddAttack.received_first_pixels.append(int(image[0, 0, 1]))
++        image[0, 0, 1] = min(255, int(image[0, 0, 1]) + int(args["amount"]))
++        return image
++
++
++class EqualMetric:
++    @staticmethod
++    def expertise(**args):
++        return float(np.array_equal(args["original_image"], args["distorted_image"]))
++
++
++class BitErrorRate:
++    @staticmethod
++    def expertise(**args):
++        left = args["original_bits"]
++        right = args["extracted_bits"]
++        return sum(a != b for a, b in zip(left, right)) / len(left)
++
++
++def metric(metric_id, solution_name, implementation, checkpoint, inputs):
++    return SimpleNamespace(
++        id=metric_id,
++        name=solution_name,
++        implementation=implementation,
++        spec=SimpleNamespace(
++            operations={"expertise": SimpleNamespace(parameters={})},
++        ),
++        checkpoint=checkpoint,
++        inputs=inputs,
++        params=SimpleNamespace(fixed={}, grid={}, variants=()),
++    )
++
++
++def make_executor():
++    PixelEmbedding.embedding_calls = 0
++    AddAttack.received_first_pixels = []
++    sample = SimpleNamespace(sample_id="sample")
++    watermark = SimpleNamespace(kind="random_bits", length=4, seed=123)
++    embedding = SimpleNamespace(
++        variant_id="embedding",
++        solution_name="PixelEmbedding",
++        implementation=PixelEmbedding,
++        embedding_parameters={},
++        extraction_parameters={},
++        spec=None,
++    )
++    cases = []
++    for index, amount in enumerate((1, 2)):
++        step = SimpleNamespace(
++            variant_id=f"step-{amount}",
++            solution_name="AddAttack",
++            implementation=AddAttack,
++            parameters={"amount": amount},
++            spec=None,
++        )
++        attack = SimpleNamespace(variant_id=f"attack-{amount}", steps=(step,))
++        cases.append(
++            SimpleNamespace(
++                case_id=f"case-{index}",
++                work_unit_id="work-unit",
++                ordinal=index,
++                sample=sample,
++                embedding=embedding,
++                attack=attack,
++                repeat_index=0,
++                embedding_seed=11,
++                case_seed=20 + index,
++                watermark=watermark,
++            )
++        )
++    unit = SimpleNamespace(
++        work_unit_id="work-unit",
++        sample=sample,
++        embedding=embedding,
++        watermark=watermark,
++        embedding_seed=11,
++        cases=tuple(cases),
++    )
++
++    class Plan:
++        fingerprint = "plan"
++        manifest = SimpleNamespace(fingerprint="manifest")
++        counts = SimpleNamespace(case_count=2, work_unit_count=1)
++
++        @staticmethod
++        def iter_work_units():
++            return iter((unit,))
++
++    class Source:
++        @staticmethod
++        def load(sample, verify_integrity=True):
++            return ImageArtifact(np.zeros((8, 8, 3), dtype=np.uint8))
++
++    resolved = SimpleNamespace(
++        config=SimpleNamespace(
++            watermark=SimpleNamespace(type="random_bits", length=4),
++            execution=SimpleNamespace(fail_fast=False),
++        ),
++        metrics=(
++            metric(
++                "image-equality",
++                "EqualMetric",
++                EqualMetric,
++                "after_attack",
++                {
++                    "original_image": "embedded_image",
++                    "distorted_image": "attacked_image",
++                },
++            ),
++            metric(
++                "ber",
++                "BER",
++                BitErrorRate,
++                "after_extraction",
++                {
++                    "original_bits": "original_watermark",
++                    "extracted_bits": "extracted_watermark",
++                },
++            ),
++        ),
++        catalog_fingerprint="catalog",
++    )
++    return SerialExecutor(Plan(), resolved, Source())
++
++
++def test_serial_executor_reuses_embedding_and_isolates_attack_branches():
++    result = make_executor().execute()
++
++    assert PixelEmbedding.embedding_calls == 1
++    assert AddAttack.received_first_pixels == [0, 0]
++    assert len(result.cases) == 2
++    assert all(case.status is ResultStatus.SUCCESS for case in result.cases)
++    assert len(result.metrics) == 4
++
++
++def test_serial_executor_is_deterministic_for_same_plan():
++    first = make_executor().execute()
++    second = make_executor().execute()
++
++    assert [case.case_id for case in first.cases] == [case.case_id for case in second.cases]
++    assert [metric.value for metric in first.metrics] == [metric.value for metric in second.metrics]
+diff --git a/tests/test_pipeline_results.py b/tests/test_pipeline_results.py
+new file mode 100644
+index 0000000..8161445
+--- /dev/null
++++ b/tests/test_pipeline_results.py
+@@ -0,0 +1,96 @@
++"""Tests for immutable serial-execution result records."""
++
++import pickle
++
++import pytest
++
++from dwarf.pipeline.results import (
++    CaseResult,
++    ExecutionResult,
++    MetricResult,
++    OperationError,
++    OperationTiming,
++    ResultStatus,
++    WorkUnitResult,
++)
++
++
++def successful_metric(case_id="case"):
++    return MetricResult(
++        metric_id="psnr",
++        metric_variant_id="metric-variant",
++        solution_name="PSNR",
++        checkpoint="after_attack",
++        work_unit_id="work-unit",
++        case_id=case_id,
++        status=ResultStatus.SUCCESS,
++        value=42.0,
++    )
++
++
++def test_execution_result_aggregates_cases_and_metrics():
++    unit_metric = successful_metric(case_id=None)
++    case_metric = successful_metric()
++    case = CaseResult(
++        case_id="case",
++        work_unit_id="work-unit",
++        ordinal=0,
++        sample_id="sample",
++        embedding_variant_id="embedding",
++        attack_variant_id="attack",
++        repeat_index=0,
++        status=ResultStatus.SUCCESS,
++        metrics=(case_metric,),
++    )
++    unit = WorkUnitResult(
++        work_unit_id="work-unit",
++        sample_id="sample",
++        embedding_variant_id="embedding",
++        status=ResultStatus.SUCCESS,
++        cases=(case,),
++        metrics=(unit_metric,),
++    )
++    result = ExecutionResult(
++        plan_fingerprint="plan",
++        catalog_fingerprint="catalog",
++        manifest_fingerprint="manifest",
++        erasure_policy="count_as_error",
++        work_units=(unit,),
++        duration_seconds=0.1,
++        started_at_utc="2026-01-01T00:00:00+00:00",
++        finished_at_utc="2026-01-01T00:00:01+00:00",
++    )
++
++    assert result.cases == (case,)
++    assert result.metrics == (unit_metric, case_metric)
++    assert result.successful_case_count == 1
++    assert result.successful_metric_count == 2
++    assert result.to_dict()["summary"]["cases"] == 1
++    assert pickle.loads(pickle.dumps(result)) == result
++
++
++def test_non_successful_metric_requires_error():
++    with pytest.raises(ValueError, match="requires an error"):
++        MetricResult(
++            metric_id="metric",
++            metric_variant_id="variant",
++            solution_name="Metric",
++            checkpoint="after_attack",
++            work_unit_id="unit",
++            case_id="case",
++            status=ResultStatus.FAILED,
++            value=None,
++        )
++
++
++def test_invalid_timing_is_rejected():
++    with pytest.raises(ValueError, match="non-negative"):
++        OperationTiming("stage", -1.0)
++
++
++def test_operation_error_preserves_exception_type():
++    error = OperationError.from_exception("embedding", ValueError("bad value"))
++
++    assert error.stage == "embedding"
++    assert error.exception_type.endswith("ValueError")
++    assert error.message == "bad value"
+diff --git a/tests/test_pipeline_runtime.py b/tests/test_pipeline_runtime.py
+new file mode 100644
+index 0000000..f263413
+--- /dev/null
++++ b/tests/test_pipeline_runtime.py
+@@ -0,0 +1,118 @@
++"""Tests for runtime artifact and solution adapters."""
++
++from types import SimpleNamespace
++
++import numpy as np
++import pytest
++
++from dwarf.pipeline.artifacts import ExtractedWatermark, ImageArtifact, OriginalWatermark
++from dwarf.pipeline.exceptions import ArtifactValidationError
++from dwarf.pipeline.runtime import (
++    EmbeddingRuntimeAdapter,
++    ErasurePolicy,
++    MetricRuntimeAdapter,
++    derive_runtime_seed,
++    materialize_watermark,
++)
++
++
++class IdentityEmbedding:
++    @staticmethod
++    def embedding(**args):
++        return args["input_image"].copy()
++
++    @staticmethod
++    def extraction(**args):
++        return np.zeros(args["num_bits"], dtype=np.int8)
++
++
++class BitErrorRate:
++    @staticmethod
++    def expertise(**args):
++        left = args["original_bits"]
++        right = args["extracted_bits"]
++        return sum(a != b for a, b in zip(left, right)) / len(left)
++
++
++def test_random_watermark_materialization_is_reproducible():
++    reference = SimpleNamespace(kind="random_bits", length=32, seed=123)
++    config = SimpleNamespace(watermark=SimpleNamespace(type="random_bits", length=32))
++
++    first = materialize_watermark(reference, config)
++    second = materialize_watermark(reference, config)
++
++    assert first == second
++    assert first.length == 32
++
++
++def test_runtime_seed_is_domain_separated():
++    assert derive_runtime_seed(42, "attack", 0) == derive_runtime_seed(42, "attack", 0)
++    assert derive_runtime_seed(42, "attack", 0) != derive_runtime_seed(42, "attack", 1)
++    assert derive_runtime_seed(42, "attack", 0) != derive_runtime_seed(42, "embedding", 0)
++
++
++def test_embedding_adapter_preserves_rgb_contract():
++    variant = SimpleNamespace(
++        solution_name="IdentityEmbedding",
++        implementation=IdentityEmbedding,
++        embedding_parameters={},
++        extraction_parameters={},
++        spec=None,
++    )
++    image = ImageArtifact(np.zeros((16, 16, 3), dtype=np.uint8))
++    watermark = OriginalWatermark([0, 1, 0, 1])
++    adapter = EmbeddingRuntimeAdapter()
++
++    embedded = adapter.embed(variant, image, watermark)
++    extracted = adapter.extract(variant, embedded, num_bits=4)
++
++    assert embedded.shape == image.shape
++    assert embedded.array.dtype == np.uint8
++    assert extracted.length == 4
++
++
++def test_ber_count_as_error_penalizes_erasures():
++    metric = SimpleNamespace(
++        solution_name="BER",
++        implementation=BitErrorRate,
++        inputs={
++            "original_bits": "original_watermark",
++            "extracted_bits": "extracted_watermark",
++        },
++        parameters={},
++    )
++    artifacts = {
++        "original_watermark": OriginalWatermark([0, 1, 1]),
++        "extracted_watermark": ExtractedWatermark([0, -1, 1]),
++    }
++
++    value = MetricRuntimeAdapter().evaluate(
++        metric,
++        artifacts,
++        erasure_policy=ErasurePolicy.COUNT_AS_ERROR,
++    )
++
++    assert value == pytest.approx(1 / 3)
++
++
++def test_ber_fail_policy_rejects_erasures():
++    metric = SimpleNamespace(
++        solution_name="BER",
++        implementation=BitErrorRate,
++        inputs={
++            "original_bits": "original_watermark",
++            "extracted_bits": "extracted_watermark",
++        },
++        parameters={},
++    )
++    artifacts = {
++        "original_watermark": OriginalWatermark([0, 1]),
++        "extracted_watermark": ExtractedWatermark([0, -1]),
++    }
++
++    with pytest.raises(ArtifactValidationError, match="erased"):
++        MetricRuntimeAdapter().evaluate(
++            metric,
++            artifacts,
++            erasure_policy=ErasurePolicy.FAIL,
++        )

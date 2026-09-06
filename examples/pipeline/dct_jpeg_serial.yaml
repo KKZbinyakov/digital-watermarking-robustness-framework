@@ -1,0 +1,107 @@
+schema_version: 1
+
+experiment:
+  name: dct-jpeg-serial
+  description: Serial DCT robustness evaluation under JPEG compression.
+  seed: 42
+  repeats: 1
+  max_cases: 1000000
+  allow_large_plan: false
+  tags: [frequency, serial, smoke]
+
+plugins: []
+
+dataset:
+  type: directory
+  path: ../../data/coco
+  recursive: true
+  extensions: [.png, .jpg, .jpeg]
+  include: []
+  exclude: []
+  limit: 100
+  shuffle: false
+  preprocessing:
+    color_mode: RGB
+    resize: [512, 512]
+    resample: lanczos
+    exif_transpose: true
+
+watermark:
+  type: random_bits
+  length: 64
+  scope: fixed_for_run
+
+embeddings:
+  - id: dct
+    name: DCT
+    embedding:
+      params:
+        fixed:
+          threshold: 25.0
+        grid:
+          margin: [100.0, 150.0, 200.0]
+    extraction:
+      params:
+        fixed:
+          threshold: 25.0
+
+attack_scenarios:
+  - id: clean
+    description: No attack; baseline extraction from the embedded image.
+    steps: []
+
+  - id: jpeg
+    description: Independent JPEG quality variants.
+    steps:
+      - name: Jpeg
+        params:
+          grid:
+            quality: [30, 50, 75, 90]
+
+metrics:
+  - id: embedding-psnr
+    name: PSNR
+    checkpoint: after_embedding
+    inputs:
+      original_image: original_image
+      distorted_image: embedded_image
+
+  - id: attack-psnr
+    name: PSNR
+    checkpoint: after_attack
+    inputs:
+      original_image: embedded_image
+      distorted_image: attacked_image
+
+  - id: watermark-ber
+    name: BER
+    checkpoint: after_extraction
+    inputs:
+      original_bits: original_watermark
+      extracted_bits: extracted_watermark
+    params:
+      fixed:
+        allow_length_mismatch: false
+
+execution:
+  backend: serial
+  workers: auto
+  max_in_flight: auto
+  start_method: auto
+  fail_fast: false
+  show_progress: true
+
+output:
+  directory: ../../runs
+  database: sqlite
+  database_filename: results.sqlite3
+  save_images: failures
+  exports: [csv]
+  overwrite: false
+
+report:
+  enabled: true
+  formats: [csv, html]
+  group_by: [embedding, attack_scenario, metric]
+  include_failures: true
+  float_precision: 6

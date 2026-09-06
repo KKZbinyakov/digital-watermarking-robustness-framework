@@ -487,7 +487,9 @@ def test_manifest_creation_detects_file_changed_while_hashing(tmp_path, monkeypa
 
     def hash_then_modify(target):
         checksum = original_hash(target)
-        save_image(path, color=(3, 2, 1))
+        with path.open("ab") as stream:
+            stream.write(b"\0")
+
         return checksum
 
     monkeypatch.setattr(dataset_module, "_sha256_file", hash_then_modify)

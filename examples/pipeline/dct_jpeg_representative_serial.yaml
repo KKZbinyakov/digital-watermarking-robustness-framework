@@ -1,0 +1,115 @@
+schema_version: 1
+
+experiment:
+  name: dct-jpeg-representative-serial
+  description: >
+    Representative serial experiment for studying the trade-off between DCT
+    embedding imperceptibility and robustness under single and repeated JPEG
+    compression.
+  seed: 20260907
+  repeats: 1
+  max_cases: 10000
+  allow_large_plan: false
+  tags: [frequency, dct, jpeg, robustness, representative, serial]
+
+plugins: []
+
+dataset:
+  type: directory
+  path: ../../data/coco
+  recursive: true
+  extensions: [.png, .jpg, .jpeg]
+  include: []
+  exclude: []
+  limit: 8
+  shuffle: true
+  preprocessing:
+    color_mode: RGB
+    resize: [512, 512]
+    resample: lanczos
+    exif_transpose: true
+
+watermark:
+  type: random_bits
+  length: 1024
+  scope: per_image
+
+embeddings:
+  - id: dct-strength-sweep
+    name: DCT
+    embedding:
+      params:
+        fixed:
+          threshold: 5.0
+        grid:
+          margin: [5.0, 10.0, 20.0, 40.0, 80.0, 150.0]
+    extraction:
+      params:
+        fixed:
+          threshold: 5.0
+
+attack_scenarios:
+  - id: clean
+    description: Baseline extraction without an attack.
+    steps: []
+
+  - id: jpeg-single
+    description: Single JPEG recompression from very aggressive to mild.
+    steps:
+      - name: Jpeg
+        params:
+          grid:
+            quality: [1, 5, 10, 20, 30, 50, 75, 90]
+
+  - id: jpeg-double
+    description: >
+      Ordered double recompression: first at quality 75, then at a stronger
+      quality level.
+    steps:
+      - name: Jpeg
+        params:
+          fixed:
+            quality: 75
+      - name: Jpeg
+        params:
+          grid:
+            quality: [10, 30]
+
+metrics:
+  - id: embedding-psnr
+    name: PSNR
+    checkpoint: after_embedding
+    inputs:
+      original_image: original_image
+      distorted_image: embedded_image
+
+  - id: attack-only-psnr
+    name: PSNR
+    checkpoint: after_attack
+    inputs:
+      original_image: embedded_image
+      distorted_image: attacked_image
+
+  - id: end-to-end-psnr
+    name: PSNR
+    checkpoint: after_attack
+    inputs:
+      original_image: original_image
+      distorted_image: attacked_image
+
+  - id: watermark-ber
+    name: BER
+    checkpoint: after_extraction
+    inputs:
+      original_bits: original_watermark
+      extracted_bits: extracted_watermark
+    params:
+      fixed:
+        allow_length_mismatch: false
+
+execution:
+  backend: serial
+  workers: 1
+  max_in_flight: 1
+  start_method: auto
+  fail_fast: false
