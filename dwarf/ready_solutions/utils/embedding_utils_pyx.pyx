@@ -32,6 +32,7 @@ cdef void init_dct_matrix():
     
     _C_DCT_INITIALIZED = True
 
+
 cdef void apply_dct_8x8(const double block_img[8][8], double block_dct[8][8]):
     """
     Прямое ДКП-преобразование блока 8x8.
@@ -340,6 +341,27 @@ cdef void idwt_2d_block(double[:, :] LL, double[:, :] LH, double[:, :] HL, doubl
             idwt_1d_l8(row_a, row_d, row_out, W, h, g)
             memcpy(&block[r, 0], row_out, W * sizeof(double))
 
+
+cpdef int validate_cell_capacity(object cell_map, int n_cells, str stage):
+    """
+    Проверяет геометрическую ёмкость лог-полярной DFT-сетки.
+    """
+    flat = np.asarray(cell_map, dtype=np.int64).reshape(-1)
+    valid = flat[flat >= 0]
+    counts = np.bincount(valid, minlength=n_cells)
+
+    if counts.size < n_cells:
+        counts = np.pad(counts, (0, n_cells - counts.size))
+
+    empty = np.flatnonzero(counts[:n_cells] == 0)
+    if empty.size:
+        raise ValueError(
+            f"DFT {stage} capacity exceeded: {empty.size} of {n_cells} "
+            "log-polar cells contain no Fourier samples. Reduce num_bits/n_sync/"
+            "oversampling/n_rho or widen the r_min..r_max ring."
+        )
+
+    return int(counts[:n_cells].min())
 
 cdef cnp.ndarray build_cell_map(int H, int W, int n_rho, int n_theta,
                                  double r1, double r2):
@@ -815,6 +837,134 @@ cdef int extract_block(double[:, ::1] img, int by, int bx,
 
 cdef double H5[5]
 cdef bint FILTERS_INITIALIZED = False
+
+cdef int capacity(int h, int w, int block, int n_sub) noexcept nogil:
+    """
+    Ёмкость масштаба Contourlet: число блоков во всех направленных
+    поддиапазонах выбранного масштаба.
+    """
+    return n_sub * (h // block) * (w // block)
+
+
+cdef void embed_subband(double[:, :] S, cnp.int32_t[:] wm, int wm_len,
+                        int sub_i, int n_sub, double margin,
+                        int block) noexcept nogil:
+    """Встраивает биты ЦВЗ в один направленный Contourlet-поддиапазон."""
+    cdef int h = S.shape[0]
+    cdef int w = S.shape[1]
+    cdef int nb_c = w // block
+    cdef int n_blocks = (h // block) * nb_c
+    cdef int blk, i_bit, br, bc, r0, k0
+    cdef double c1, c2, d
+
+    for blk in range(n_blocks):
+        i_bit = blk * n_sub + sub_i
+        if i_bit >= wm_len:
+            return
+
+        br = blk // nb_c
+        bc = blk % nb_c
+        r0 = br * block
+        k0 = bc * block
+
+        c1 = S[r0 + 1, k0 + 1]
+        c2 = S[r0 + 2, k0 + 2]
+
+        if wm[i_bit] == 1:
+            if c1 - c2 < margin:
+                d = 0.5 * (margin - (c1 - c2))
+                S[r0 + 1, k0 + 1] = c1 + d
+                S[r0 + 2, k0 + 2] = c2 - d
+        else:
+            if c2 - c1 < margin:
+                d = 0.5 * (margin - (c2 - c1))
+                S[r0 + 2, k0 + 2] = c2 + d
+                S[r0 + 1, k0 + 1] = c1 - d
+
+
+cdef void extract_subband(double[:, :] S, cnp.int32_t[:] wm, int wm_len,
+                          int sub_i, int n_sub, int block) noexcept nogil:
+    """Извлекает биты ЦВЗ из одного направленного Contourlet-поддиапазона."""
+    cdef int h = S.shape[0]
+    cdef int w = S.shape[1]
+    cdef int nb_c = w // block
+    cdef int n_blocks = (h // block) * nb_c
+    cdef int blk, i_bit, br, bc, r0, k0
+    cdef double c1, c2
+
+    for blk in range(n_blocks):
+        i_bit = blk * n_sub + sub_i
+        if i_bit >= wm_len:
+            return
+
+        br = blk // nb_c
+        bc = blk % nb_c
+        r0 = br * block
+        k0 = bc * block
+
+        c1 = S[r0 + 1, k0 + 1]
+        c2 = S[r0 + 2, k0 + 2]
+        wm[i_bit] = 1 if c1 > c2 else 0
+
+
+cdef int count_subband_bit_errors(object subbands, cnp.int32_t[:] wm,
+                                  int wm_len, int block):
+    """Считает биты Contourlet-ЦВЗ, потерянные после reconstruction -> decomposition."""
+    cdef int n_sub = len(subbands)
+    cdef int s_i, h, w, nb_c, n_blocks
+    cdef int blk, i_bit, br, bc, r0, k0
+    cdef int errors = 0
+    cdef double[:, :] S
+    cdef double c1, c2
+
+    for s_i in range(n_sub):
+        S = subbands[s_i]
+        h = S.shape[0]
+        w = S.shape[1]
+        nb_c = w // block
+        n_blocks = (h // block) * nb_c
+
+        for blk in range(n_blocks):
+            i_bit = blk * n_sub + s_i
+            if i_bit >= wm_len:
+                break
+
+            br = blk // nb_c
+            bc = blk % nb_c
+            r0 = br * block
+            k0 = bc * block
+
+            c1 = S[r0 + 1, k0 + 1]
+            c2 = S[r0 + 2, k0 + 2]
+
+            if (wm[i_bit] == 1 and c1 <= c2) or (wm[i_bit] != 1 and c2 <= c1):
+                errors += 1
+
+    return errors
+
+
+cpdef object valid_contourlet_shape(int height, int width,
+                                     int n_levels, int dfb_levels):
+    """
+    Возвращает максимальную квадратную верхнюю левую область, совместимую
+    с текущей реализацией Лапласовой пирамиды и DFB.
+    """
+    if n_levels < 1:
+        raise ValueError("n_levels must be >= 1.")
+    if dfb_levels < 0:
+        raise ValueError("dfb_levels must be >= 0.")
+
+    cdef int factor = 1 << (n_levels + dfb_levels)
+    cdef int side = (min(height, width) // factor) * factor
+
+    if side == 0:
+        raise ValueError(
+            f"Image size {width}x{height} is too small for "
+            f"n_levels={n_levels}, dfb_levels={dfb_levels}: "
+            f"need at least {factor}x{factor}."
+        )
+
+    return side, side
 
 cdef void init_filters() noexcept nogil:
     """

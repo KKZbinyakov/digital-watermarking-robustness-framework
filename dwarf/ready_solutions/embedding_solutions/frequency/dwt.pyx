@@ -186,8 +186,8 @@ class DWT(Ready_Frequency_Embeddings):
     def embedding(**args):
         """
         Встраивает биты ЦВЗ в DWT-коэффициенты блоков изображения.
-        :param input_image: матрица входного изображения.
-        :param watermark_bits: массив битов ЦВЗ.
+        :param input_image: RGB-изображение uint8 формы (H, W, 3).
+        :param watermark_bits: массив uint8 из значений 0/1.
         :param block_size: размер блока (8 или 16).
         :param min_difference: минимальная требуемая разность между коэффициентами HL и LH
             в единицах DWT-коэффициента.
@@ -196,7 +196,7 @@ class DWT(Ready_Frequency_Embeddings):
         :param redundant: использовать избыточное встраивание: три копии ЦВЗ
             размещаются в трёх непересекающихся областях блоков.
 
-        :return output_image: матрица изображения с встроенным ЦВЗ.
+        :return output_image: RGB-изображение uint8 формы (H, W, 3) со встроенным ЦВЗ.
         """
         defaults = {
                     "input_image": None, 
@@ -215,8 +215,41 @@ class DWT(Ready_Frequency_Embeddings):
         if image is None or watermark is None:
             raise ValueError("input_image/image_path or watermark_bits not given")
 
-        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
-        cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
+        image_arr = np.asarray(image)
+        if image_arr.ndim != 3 or image_arr.shape[2] != 3:
+            raise ValueError(
+                f"input_image must have shape (H, W, 3), got {image_arr.shape}"
+            )
+        if image_arr.dtype != np.uint8:
+            raise TypeError(
+                f"input_image must have dtype uint8, got {image_arr.dtype}"
+            )
+
+        watermark_arr = np.asarray(watermark)
+        if watermark_arr.ndim != 1:
+            raise ValueError(
+                f"watermark_bits must be one-dimensional, got shape {watermark_arr.shape}"
+            )
+        if watermark_arr.dtype != np.uint8:
+            raise TypeError(
+                f"watermark_bits must have dtype uint8, got {watermark_arr.dtype}"
+            )
+        if watermark_arr.size == 0:
+            raise ValueError("watermark_bits must not be empty")
+        if np.any((watermark_arr != 0) & (watermark_arr != 1)):
+            raise ValueError("watermark_bits must contain only 0 and 1")
+
+        cdef cnp.ndarray[cnp.uint8_t, ndim=3, mode='c'] rgb_c = np.ascontiguousarray(image_arr)
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] input_y = np.ascontiguousarray(
+            0.299 * rgb_c[:, :, 0]
+            + 0.587 * rgb_c[:, :, 1]
+            + 0.114 * rgb_c[:, :, 2],
+            dtype=np.float64,
+        )
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = input_y.copy()
+        cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(
+            watermark_arr, dtype=np.int32
+        )
         cdef int block_size = int(args["block_size"])
         cdef double min_difference = args["min_difference"]
         cdef double amplification_factor = args["amplification_factor"]
@@ -275,20 +308,25 @@ class DWT(Ready_Frequency_Embeddings):
                    row_a_ptr, row_d_ptr, col_in_ptr, col_a_ptr, col_d_ptr, col_out_ptr,
                    row_out_ptr, h, g, L)
         
-        return watermarked_img
+        watermarked_y = np.asarray(watermarked_img, dtype=np.float64)
+        delta_y = watermarked_y - input_y
+        output_rgb = rgb_c.astype(np.float64) + delta_y[:, :, None]
+        return np.ascontiguousarray(
+            np.clip(np.rint(output_rgb), 0, 255).astype(np.uint8)
+        )
 
     @staticmethod
     def extraction(**args):
         """
         Извлекает биты ЦВЗ из DWT-коэффициентов блоков изображения.
-        :param input_image: матрица изображения с ЦВЗ.
+        :param input_image: RGB-изображение uint8 формы (H, W, 3) с ЦВЗ.
         :param num_bits: длина ЦВЗ.
         :param block_size: размер блока (8 или 16).
         :param wavelet_name: тип вейвлета (haar, db4, sym4).
         :param redundant: использовать избыточное извлечение из трёх
             непересекающихся копий с голосованием по большинству.
 
-        :return extracted_wm: извлечённый ЦВЗ.
+        :return extracted_wm: извлечённый int8-массив из значений 0/1.
         """
         defaults = {
                     "input_image": None, 
@@ -305,7 +343,23 @@ class DWT(Ready_Frequency_Embeddings):
         if image is None or not num_bits:
             raise ValueError("input_image/image_path or watermark_bits not given")
 
-        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
+        image_arr = np.asarray(image)
+        if image_arr.ndim != 3 or image_arr.shape[2] != 3:
+            raise ValueError(
+                f"input_image must have shape (H, W, 3), got {image_arr.shape}"
+            )
+        if image_arr.dtype != np.uint8:
+            raise TypeError(
+                f"input_image must have dtype uint8, got {image_arr.dtype}"
+            )
+
+        cdef cnp.ndarray[cnp.uint8_t, ndim=3, mode='c'] rgb_c = np.ascontiguousarray(image_arr)
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(
+            0.299 * rgb_c[:, :, 0]
+            + 0.587 * rgb_c[:, :, 1]
+            + 0.114 * rgb_c[:, :, 2],
+            dtype=np.float64,
+        )
         cdef int block_size = int(args["block_size"])
         cdef bytes wavelet_name = args["wavelet_name"].encode('ascii')
         cdef bint redundant = args["redundant"]
@@ -356,4 +410,6 @@ class DWT(Ready_Frequency_Embeddings):
                      redundant, LL, LH, HL, HH, block, temp_ptr, row_a_ptr, row_d_ptr,
                      col_in_ptr, col_a_ptr, col_d_ptr, h, g, L)
         
-        return extracted_wm
+        if np.any((extracted_wm != 0) & (extracted_wm != 1)):
+            raise RuntimeError("dwt extraction produced a non-binary watermark")
+        return np.ascontiguousarray(extracted_wm, dtype=np.int8)

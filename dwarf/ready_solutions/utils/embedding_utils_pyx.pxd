@@ -22,6 +22,7 @@ cdef void idwt_2d_block(double[:, :] LL, double[:, :] LH, double[:, :] HL, doubl
                         const double* h, const double* g, int L, int block_size)
 
 
+cpdef int validate_cell_capacity(object cell_map, int n_cells, str stage)
 cdef cnp.ndarray build_cell_map(int H, int W, int n_rho, int n_theta, double r1, double r2)
 cdef void accumulate(double complex[:, ::1] F, int[:, ::1] cell, double[::1] sum_log, cnp.int64_t[::1] count) noexcept nogil
 cdef void apply_gain(double complex[:, ::1] F, int[:, ::1] cell, double[::1] gain) noexcept nogil
@@ -44,6 +45,16 @@ cdef void embed_block(double[:, ::1] img, int by, int bx, int bit, double delta)
 cdef int extract_block(double[:, ::1] img, int by, int bx, double delta) noexcept nogil
 
 
+cdef int capacity(int h, int w, int block, int n_sub) noexcept nogil
+cdef void embed_subband(double[:, :] S, cnp.int32_t[:] wm, int wm_len,
+                        int sub_i, int n_sub, double margin,
+                        int block) noexcept nogil
+cdef void extract_subband(double[:, :] S, cnp.int32_t[:] wm, int wm_len,
+                          int sub_i, int n_sub, int block) noexcept nogil
+cdef int count_subband_bit_errors(object subbands, cnp.int32_t[:] wm,
+                                  int wm_len, int block)
+cpdef object valid_contourlet_shape(int height, int width,
+                                     int n_levels, int dfb_levels)
 cdef void init_filters() noexcept nogil
 cdef void init_offsets() noexcept nogil
 cpdef contourlet_decompose(cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] image, int n_levels, int dfb_levels)

@@ -10,40 +10,13 @@ from libc.math cimport log, sqrt
 
 from dwarf.core.embedding_orchestrator.embedding_core import Ready_Frequency_Embeddings
 from dwarf.ready_solutions.utils.embedding_utils_pyx cimport (
-    build_cell_map, cell_mean_sync, apply_gain
+    build_cell_map, cell_mean_sync, apply_gain, validate_cell_capacity
 )
 
 cnp.import_array()
 
 BARKER13 = np.array([+1, +1, +1, +1, +1, -1, -1, +1, +1, -1, +1, -1, +1],
                     dtype=np.float64)
-
-def _validate_cell_capacity(cell_map, int n_cells, str stage):
-    """
-    Проверяет геометрическую ёмкость лог-полярной сетки.
-
-    build_cell_map маркирует каждый спектральный отсчёт номером ячейки.
-    Если хотя бы одна используемая ячейка пуста, соответствующая пара
-    секторов не несёт измеряемой информации и дальнейшее извлечение
-    становится недостоверным.
-    """
-    flat = np.asarray(cell_map, dtype=np.int64).reshape(-1)
-    valid = flat[flat >= 0]
-    counts = np.bincount(valid, minlength=n_cells)
-
-    if counts.size < n_cells:
-        counts = np.pad(counts, (0, n_cells - counts.size))
-
-    empty = np.flatnonzero(counts[:n_cells] == 0)
-    if empty.size:
-        raise ValueError(
-            f"DFT {stage} capacity exceeded: {empty.size} of {n_cells} "
-            "log-polar cells contain no Fourier samples. Reduce num_bits/n_sync/"
-            "oversampling/n_rho or widen the r_min..r_max ring."
-        )
-
-    return int(counts[:n_cells].min())
-
 
 cdef void _embed_core(double complex[:, ::1] F_mv, int[:, ::1] cell_mv, 
                       int n_rho, int n_theta, int n_cells, int n_sync,
@@ -145,8 +118,8 @@ class DFT(Ready_Frequency_Embeddings):
     def embedding(**args):
         """
         Встраивает биты ЦВЗ в амплитудный спектр изображения с использованием лог-полярной сетки.
-        :param input_image: матрица входного изображения (канал яркости Y).
-        :param watermark_bits: массив битов ЦВЗ.
+        :param input_image: RGB-изображение uint8 формы (H, W, 3).
+        :param watermark_bits: массив uint8 из значений 0/1.
         :param margin: целевая разность средних ln|F| внутри пары секторов.
         :param n_rho: число подколец.
         :param r_min: внутренняя граница рабочего кольца.
@@ -157,7 +130,7 @@ class DFT(Ready_Frequency_Embeddings):
         :param n_iter: число итераций уточнения усиления.
         :param max_gain: ограничение на коэффициент усиления ячейки.
 
-        :return output_image: матрица изображения с встроенным ЦВЗ.
+        :return output_image: RGB-изображение uint8 формы (H, W, 3) со встроенным ЦВЗ.
         """
         defaults = {
                     "input_image": None,
@@ -179,8 +152,41 @@ class DFT(Ready_Frequency_Embeddings):
         if image is None or watermark is None:
             raise ValueError("input_image/image_path or watermark_bits not given")
 
-        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
-        cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
+        image_arr = np.asarray(image)
+        if image_arr.ndim != 3 or image_arr.shape[2] != 3:
+            raise ValueError(
+                f"input_image must have shape (H, W, 3), got {image_arr.shape}"
+            )
+        if image_arr.dtype != np.uint8:
+            raise TypeError(
+                f"input_image must have dtype uint8, got {image_arr.dtype}"
+            )
+
+        watermark_arr = np.asarray(watermark)
+        if watermark_arr.ndim != 1:
+            raise ValueError(
+                f"watermark_bits must be one-dimensional, got shape {watermark_arr.shape}"
+            )
+        if watermark_arr.dtype != np.uint8:
+            raise TypeError(
+                f"watermark_bits must have dtype uint8, got {watermark_arr.dtype}"
+            )
+        if watermark_arr.size == 0:
+            raise ValueError("watermark_bits must not be empty")
+        if np.any((watermark_arr != 0) & (watermark_arr != 1)):
+            raise ValueError("watermark_bits must contain only 0 and 1")
+
+        cdef cnp.ndarray[cnp.uint8_t, ndim=3, mode='c'] rgb_c = np.ascontiguousarray(image_arr)
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] input_y = np.ascontiguousarray(
+            0.299 * rgb_c[:, :, 0]
+            + 0.587 * rgb_c[:, :, 1]
+            + 0.114 * rgb_c[:, :, 2],
+            dtype=np.float64,
+        )
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = input_y.copy()
+        cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(
+            watermark_arr, dtype=np.int32
+        )
         
         cdef double margin = args["margin"]
         cdef int n_rho = int(args["n_rho"])
@@ -212,7 +218,7 @@ class DFT(Ready_Frequency_Embeddings):
 
         cdef cnp.ndarray[cnp.int32_t, ndim=2, mode='c'] cellm = \
             build_cell_map(H, W, n_rho, n_theta, r_min, r_max)
-        _validate_cell_capacity(cellm, n_cells, "embedding")
+        validate_cell_capacity(cellm, n_cells, "embedding")
         cdef int[:, ::1] cell_mv = cellm
 
         sym = np.empty(n_sec, dtype=np.float64)
@@ -224,13 +230,18 @@ class DFT(Ready_Frequency_Embeddings):
 
         _embed_core(F_mv, cell_mv, n_rho, n_theta, n_cells, n_sync, target_mv, n_iter, max_gain)
 
-        return np.ascontiguousarray(np.fft.ifft2(F).real, dtype=np.float64)
+        watermarked_y = np.ascontiguousarray(np.fft.ifft2(F).real, dtype=np.float64)
+        delta_y = watermarked_y - input_y
+        output_rgb = rgb_c.astype(np.float64) + delta_y[:, :, None]
+        return np.ascontiguousarray(
+            np.clip(np.rint(output_rgb), 0, 255).astype(np.uint8)
+        )
 
     @staticmethod
     def extraction(**args):
         """
         Извлекает биты ЦВЗ из амплитудного спектра изображения.
-        :param input_image: матрица изображения с ЦВЗ (канал яркости Y).
+        :param input_image: RGB-изображение uint8 формы (H, W, 3) с ЦВЗ.
         :param num_bits: длина ЦВЗ.
         :param n_rho: число подколец.
         :param r_min: внутренняя граница кольца.
@@ -244,7 +255,7 @@ class DFT(Ready_Frequency_Embeddings):
             Barker-маркера. По умолчанию 0.65; 0 отключает порог, но не саму
             проверку наличия маркера.
 
-        :return extracted_wm: извлечённый ЦВЗ.
+        :return extracted_wm: извлечённый int8-массив из значений 0/1.
         """
         defaults = {
                     "input_image": None,
@@ -266,7 +277,23 @@ class DFT(Ready_Frequency_Embeddings):
         if image is None or not num_bits:
             raise ValueError("input_image/image_path or watermark_bits not given")
 
-        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
+        image_arr = np.asarray(image)
+        if image_arr.ndim != 3 or image_arr.shape[2] != 3:
+            raise ValueError(
+                f"input_image must have shape (H, W, 3), got {image_arr.shape}"
+            )
+        if image_arr.dtype != np.uint8:
+            raise TypeError(
+                f"input_image must have dtype uint8, got {image_arr.dtype}"
+            )
+
+        cdef cnp.ndarray[cnp.uint8_t, ndim=3, mode='c'] rgb_c = np.ascontiguousarray(image_arr)
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(
+            0.299 * rgb_c[:, :, 0]
+            + 0.587 * rgb_c[:, :, 1]
+            + 0.114 * rgb_c[:, :, 2],
+            dtype=np.float64,
+        )
         cdef int wm_length = num_bits
         
         cdef int n_rho = int(args["n_rho"])
@@ -306,7 +333,7 @@ class DFT(Ready_Frequency_Embeddings):
 
         cdef cnp.ndarray[cnp.int32_t, ndim=2, mode='c'] cellm = \
             build_cell_map(H, W, n_rho, n_fine, r_min, r_max)
-        _validate_cell_capacity(cellm, n_rho * n_fine, "extraction")
+        validate_cell_capacity(cellm, n_rho * n_fine, "extraction")
 
         cdef cnp.ndarray[cnp.float64_t, ndim=1] bark = \
             np.ascontiguousarray(BARKER13[np.arange(n_sync if n_sync > 0 else 1) % 13])
@@ -327,4 +354,6 @@ class DFT(Ready_Frequency_Embeddings):
                 "Check that n_sync, n_rho, r_min and r_max match the embedding parameters."
             )
 
-        return bits
+        if np.any((bits != 0) & (bits != 1)):
+            raise RuntimeError("DFT extraction produced a non-binary watermark")
+        return np.ascontiguousarray(bits, dtype=np.int8)
