@@ -30,9 +30,11 @@ cdef void _embed_core(double[:, :] img_view, int blocks_h, int blocks_w,
         blocks_w: количество блоков по ширине.
         watermark: ЦВЗ.
         block_size: размер блока.
-        min_difference: минимальная разность между коэффициентами.
+        min_difference: минимальная разность между коэффициентами HL и LH
+            в единицах DWT-коэффициента.
         amplification_factor: коэффициент усиления.
-        redundant: использовать избыточное встраивание.
+        redundant: использовать избыточное встраивание трёх копий
+            в непересекающиеся области блоков изображения.
         LL, LH, HL, HH: буферы подполос.
         block: буфер блока.
         temp_ptr, row_a_ptr, row_d_ptr, col_in_ptr, col_a_ptr, col_d_ptr, col_out_ptr, row_out_ptr: указатели на буферы.
@@ -41,57 +43,52 @@ cdef void _embed_core(double[:, :] img_view, int blocks_h, int blocks_w,
     """
     cdef int wm_len = watermark.shape[0]
     cdef int copies = 3 if redundant else 1
-    cdef int bi, bj, r, c, copy_idx, b_idx
+    cdef int capacity = blocks_h * blocks_w
+    cdef int copy_stride = capacity // copies
+    cdef int bi, bj, r, c, copy_idx, b_idx, flat_idx
     cdef double hl_val, lh_val, diff
     cdef double[:, :] hl_view = HL
     cdef double[:, :] lh_view = LH
     cdef double[:, :] block_view = block
-    
+
     for copy_idx in range(copies):
-        b_idx = 0
-        for bi in range(blocks_h):
-            for bj in range(blocks_w):
-                if b_idx >= wm_len:
-                    break
-                
-                for r in range(block_size):
-                    for c in range(block_size):
-                        block_view[r, c] = img_view[bi * block_size + r, bj * block_size + c]
-                
-                dwt_2d_block(block, LL, LH, HL, HH, temp_ptr, row_a_ptr, row_d_ptr, 
-                            col_in_ptr, col_a_ptr, col_d_ptr, h, g, L, block_size)
-                
-                hl_val = hl_view[0, 0]
-                lh_val = lh_view[0, 0]
-                
-                if watermark[b_idx] == 1:
-                    if hl_val <= lh_val:
-                        hl_view[0, 0] = lh_val * amplification_factor
-                    
-                    diff = hl_view[0, 0] - lh_view[0, 0]
-                    if diff < min_difference:
-                        hl_view[0, 0] = lh_view[0, 0] + min_difference
-                
-                else:
-                    if lh_val <= hl_val:
-                        lh_view[0, 0] = hl_val * amplification_factor
-                    
-                    diff = lh_view[0, 0] - hl_view[0, 0]
-                    if diff < min_difference:
-                        lh_view[0, 0] = hl_view[0, 0] + min_difference
-                
-                idwt_2d_block(LL, LH, HL, HH, block, temp_ptr, col_a_ptr, col_d_ptr, 
-                             col_out_ptr, row_a_ptr, row_d_ptr, row_out_ptr, h, g, L, block_size)
-                
-                for r in range(block_size):
-                    for c in range(block_size):
-                        img_view[bi * block_size + r, bj * block_size + c] = block_view[r, c]
-                
-                b_idx += 1
-            if b_idx >= wm_len:
-                break
-        if not redundant:
-            break
+        for b_idx in range(wm_len):
+            flat_idx = copy_idx * copy_stride + b_idx
+            bi = flat_idx // blocks_w
+            bj = flat_idx % blocks_w
+
+            for r in range(block_size):
+                for c in range(block_size):
+                    block_view[r, c] = img_view[bi * block_size + r, bj * block_size + c]
+
+            dwt_2d_block(block, LL, LH, HL, HH, temp_ptr, row_a_ptr, row_d_ptr,
+                        col_in_ptr, col_a_ptr, col_d_ptr, h, g, L, block_size)
+
+            hl_val = hl_view[0, 0]
+            lh_val = lh_view[0, 0]
+
+            if watermark[b_idx] == 1:
+                if hl_val <= lh_val:
+                    hl_view[0, 0] = lh_val * amplification_factor
+
+                diff = hl_view[0, 0] - lh_view[0, 0]
+                if diff < min_difference:
+                    hl_view[0, 0] = lh_view[0, 0] + min_difference
+
+            else:
+                if lh_val <= hl_val:
+                    lh_view[0, 0] = hl_val * amplification_factor
+
+                diff = lh_view[0, 0] - hl_view[0, 0]
+                if diff < min_difference:
+                    lh_view[0, 0] = hl_view[0, 0] + min_difference
+
+            idwt_2d_block(LL, LH, HL, HH, block, temp_ptr, col_a_ptr, col_d_ptr,
+                         col_out_ptr, row_a_ptr, row_d_ptr, row_out_ptr, h, g, L, block_size)
+
+            for r in range(block_size):
+                for c in range(block_size):
+                    img_view[bi * block_size + r, bj * block_size + c] = block_view[r, c]
 
 cdef void _extract_core(double[:, :] img_view, int blocks_h, int blocks_w, 
                         int[:] extracted, int wm_length, int block_size, bint redundant,
@@ -109,14 +106,18 @@ cdef void _extract_core(double[:, :] img_view, int blocks_h, int blocks_w,
         extracted: выходной массив для извлечённых бит.
         wm_length: длина ЦВЗ.
         block_size: размер блока.
-        redundant: использовать избыточное извлечение.
+        redundant: использовать избыточное извлечение из трёх
+            непересекающихся областей с голосованием по большинству.
         LL, LH, HL, HH: буферы подполос.
         block: буфер блока.
         temp_ptr, row_a_ptr, row_d_ptr, col_in_ptr, col_a_ptr, col_d_ptr: указатели на буферы.
         h, g: фильтры.
         L: длина фильтра.
     """
-    cdef int bi, bj, r, c, copy_idx, b_idx
+    cdef int capacity = blocks_h * blocks_w
+    cdef int copies = 3 if redundant else 1
+    cdef int copy_stride = capacity // copies
+    cdef int bi, bj, r, c, copy_idx, b_idx, flat_idx
     cdef double hl_val, lh_val
     cdef int votes_1
     cdef double[:, :] hl_view = HL
@@ -127,31 +128,26 @@ cdef void _extract_core(double[:, :] img_view, int blocks_h, int blocks_w,
     
     if redundant:
         for copy_idx in range(3):
-            b_idx = 0
-            for bi in range(blocks_h):
-                for bj in range(blocks_w):
-                    if b_idx >= wm_length:
-                        break
-                    
-                    for r in range(block_size):
-                        for c in range(block_size):
-                            block_view[r, c] = img_view[bi * block_size + r, bj * block_size + c]
-                    
-                    dwt_2d_block(block, LL, LH, HL, HH, temp_ptr, row_a_ptr, row_d_ptr, 
-                                col_in_ptr, col_a_ptr, col_d_ptr, h, g, L, block_size)
-                    
-                    hl_val = hl_view[0, 0]
-                    lh_val = lh_view[0, 0]
-                    
-                    if hl_val > lh_val:
-                        votes[copy_idx, b_idx] = 1
-                    else:
-                        votes[copy_idx, b_idx] = 0
-                    
-                    b_idx += 1
-                if b_idx >= wm_length:
-                    break
-        
+            for b_idx in range(wm_length):
+                flat_idx = copy_idx * copy_stride + b_idx
+                bi = flat_idx // blocks_w
+                bj = flat_idx % blocks_w
+
+                for r in range(block_size):
+                    for c in range(block_size):
+                        block_view[r, c] = img_view[bi * block_size + r, bj * block_size + c]
+
+                dwt_2d_block(block, LL, LH, HL, HH, temp_ptr, row_a_ptr, row_d_ptr,
+                            col_in_ptr, col_a_ptr, col_d_ptr, h, g, L, block_size)
+
+                hl_val = hl_view[0, 0]
+                lh_val = lh_view[0, 0]
+
+                if hl_val > lh_val:
+                    votes[copy_idx, b_idx] = 1
+                else:
+                    votes[copy_idx, b_idx] = 0
+
         for b_idx in range(wm_length):
             votes_1 = votes[0, b_idx] + votes[1, b_idx] + votes[2, b_idx]
             if votes_1 >= 2:
@@ -190,21 +186,23 @@ class DWT(Ready_Frequency_Embeddings):
     def embedding(**args):
         """
         Встраивает биты ЦВЗ в DWT-коэффициенты блоков изображения.
-        :param input_image: матрица входного изображения.
-        :param watermark_bits: массив битов ЦВЗ.
+        :param input_image: RGB-изображение uint8 формы (H, W, 3).
+        :param watermark_bits: массив uint8 из значений 0/1.
         :param block_size: размер блока (8 или 16).
-        :param min_difference: минимальная требуемая разность между коэффициентами HL и LH.
+        :param min_difference: минимальная требуемая разность между коэффициентами HL и LH
+            в единицах DWT-коэффициента.
         :param amplification_factor: коэффициент усиления (1.1 < v < 2).
         :param wavelet_name: тип вейвлета (haar, db4, sym4).
-        :param redundant: использовать избыточное встраивание (3 копии).
+        :param redundant: использовать избыточное встраивание: три копии ЦВЗ
+            размещаются в трёх непересекающихся областях блоков.
 
-        :return output_image: матрица изображения с встроенным ЦВЗ.
+        :return output_image: RGB-изображение uint8 формы (H, W, 3) со встроенным ЦВЗ.
         """
         defaults = {
                     "input_image": None, 
                     "watermark_bits": None, 
                     "block_size": 8,
-                    "min_difference": 0.5, 
+                    "min_difference": 20.0, 
                     "amplification_factor": 1.5,
                     "wavelet_name": "haar",
                     "redundant": True
@@ -217,8 +215,41 @@ class DWT(Ready_Frequency_Embeddings):
         if image is None or watermark is None:
             raise ValueError("input_image/image_path or watermark_bits not given")
 
-        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
-        cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
+        image_arr = np.asarray(image)
+        if image_arr.ndim != 3 or image_arr.shape[2] != 3:
+            raise ValueError(
+                f"input_image must have shape (H, W, 3), got {image_arr.shape}"
+            )
+        if image_arr.dtype != np.uint8:
+            raise TypeError(
+                f"input_image must have dtype uint8, got {image_arr.dtype}"
+            )
+
+        watermark_arr = np.asarray(watermark)
+        if watermark_arr.ndim != 1:
+            raise ValueError(
+                f"watermark_bits must be one-dimensional, got shape {watermark_arr.shape}"
+            )
+        if watermark_arr.dtype != np.uint8:
+            raise TypeError(
+                f"watermark_bits must have dtype uint8, got {watermark_arr.dtype}"
+            )
+        if watermark_arr.size == 0:
+            raise ValueError("watermark_bits must not be empty")
+        if np.any((watermark_arr != 0) & (watermark_arr != 1)):
+            raise ValueError("watermark_bits must contain only 0 and 1")
+
+        cdef cnp.ndarray[cnp.uint8_t, ndim=3, mode='c'] rgb_c = np.ascontiguousarray(image_arr)
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] input_y = np.ascontiguousarray(
+            0.299 * rgb_c[:, :, 0]
+            + 0.587 * rgb_c[:, :, 1]
+            + 0.114 * rgb_c[:, :, 2],
+            dtype=np.float64,
+        )
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = input_y.copy()
+        cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(
+            watermark_arr, dtype=np.int32
+        )
         cdef int block_size = int(args["block_size"])
         cdef double min_difference = args["min_difference"]
         cdef double amplification_factor = args["amplification_factor"]
@@ -235,10 +266,13 @@ class DWT(Ready_Frequency_Embeddings):
         cdef int blocks_w = W // block_size
         cdef int capacity = blocks_h * blocks_w
         cdef int wm_len = wm_c.shape[0]
+        cdef int copies = 3 if redundant else 1
+        cdef int required_blocks = wm_len * copies
 
-        if wm_len > capacity:
+        if required_blocks > capacity:
             raise ValueError(
-                f"Not enough capacity: need {wm_len} blocks, available {capacity}."
+                f"Not enough capacity: need {required_blocks} blocks "
+                f"for {copies} watermark copy/copies, available {capacity}."
             )
         cdef int half_block = block_size >> 1
         
@@ -274,19 +308,25 @@ class DWT(Ready_Frequency_Embeddings):
                    row_a_ptr, row_d_ptr, col_in_ptr, col_a_ptr, col_d_ptr, col_out_ptr,
                    row_out_ptr, h, g, L)
         
-        return watermarked_img
+        watermarked_y = np.asarray(watermarked_img, dtype=np.float64)
+        delta_y = watermarked_y - input_y
+        output_rgb = rgb_c.astype(np.float64) + delta_y[:, :, None]
+        return np.ascontiguousarray(
+            np.clip(np.rint(output_rgb), 0, 255).astype(np.uint8)
+        )
 
     @staticmethod
     def extraction(**args):
         """
         Извлекает биты ЦВЗ из DWT-коэффициентов блоков изображения.
-        :param input_image: матрица изображения с ЦВЗ.
+        :param input_image: RGB-изображение uint8 формы (H, W, 3) с ЦВЗ.
         :param num_bits: длина ЦВЗ.
         :param block_size: размер блока (8 или 16).
         :param wavelet_name: тип вейвлета (haar, db4, sym4).
-        :param redundant: использовать избыточное извлечение (голосование).
+        :param redundant: использовать избыточное извлечение из трёх
+            непересекающихся копий с голосованием по большинству.
 
-        :return extracted_wm: извлечённый ЦВЗ.
+        :return extracted_wm: извлечённый int8-массив из значений 0/1.
         """
         defaults = {
                     "input_image": None, 
@@ -303,7 +343,23 @@ class DWT(Ready_Frequency_Embeddings):
         if image is None or not num_bits:
             raise ValueError("input_image/image_path or watermark_bits not given")
 
-        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
+        image_arr = np.asarray(image)
+        if image_arr.ndim != 3 or image_arr.shape[2] != 3:
+            raise ValueError(
+                f"input_image must have shape (H, W, 3), got {image_arr.shape}"
+            )
+        if image_arr.dtype != np.uint8:
+            raise TypeError(
+                f"input_image must have dtype uint8, got {image_arr.dtype}"
+            )
+
+        cdef cnp.ndarray[cnp.uint8_t, ndim=3, mode='c'] rgb_c = np.ascontiguousarray(image_arr)
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(
+            0.299 * rgb_c[:, :, 0]
+            + 0.587 * rgb_c[:, :, 1]
+            + 0.114 * rgb_c[:, :, 2],
+            dtype=np.float64,
+        )
         cdef int block_size = int(args["block_size"])
         cdef bytes wavelet_name = args["wavelet_name"].encode('ascii')
         cdef bint redundant = args["redundant"]
@@ -317,10 +373,13 @@ class DWT(Ready_Frequency_Embeddings):
         cdef int blocks_h = H // block_size
         cdef int blocks_w = W // block_size
         cdef int capacity = blocks_h * blocks_w
+        cdef int copies = 3 if redundant else 1
+        cdef int required_blocks = num_bits * copies
 
-        if num_bits > capacity:
+        if required_blocks > capacity:
             raise ValueError(
-                f"Cannot extract {num_bits} bits: capacity is {capacity}."
+                f"Cannot extract {num_bits} bits with {copies} copy/copies: "
+                f"need {required_blocks} blocks, capacity is {capacity}."
             )
         cdef int half_block = block_size >> 1
         
@@ -351,4 +410,6 @@ class DWT(Ready_Frequency_Embeddings):
                      redundant, LL, LH, HL, HH, block, temp_ptr, row_a_ptr, row_d_ptr,
                      col_in_ptr, col_a_ptr, col_d_ptr, h, g, L)
         
-        return extracted_wm
+        if np.any((extracted_wm != 0) & (extracted_wm != 1)):
+            raise RuntimeError("dwt extraction produced a non-binary watermark")
+        return np.ascontiguousarray(extracted_wm, dtype=np.int8)

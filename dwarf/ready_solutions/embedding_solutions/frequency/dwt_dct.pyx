@@ -100,7 +100,7 @@ cdef void _embed_core(double[:, :] img_view, int blocks_h, int blocks_w,
             break
 
 cdef void _extract_core(double[:, :] img_view, int blocks_h, int blocks_w,
-                        int[:] extracted, int wm_length, int block_size, double threshold,
+                        int[:] extracted, int wm_length, int block_size,
                         double[:, :] block,
                         double[:, :] LL, double[:, :] LH, double[:, :] HL, double[:, :] HH,
                         double* temp_ptr, double* row_a_ptr, double* row_d_ptr,
@@ -156,12 +156,7 @@ cdef void _extract_core(double[:, :] img_view, int blocks_h, int blocks_w,
             c2 = dct_out[4][3]
             k = fabs(c1) - fabs(c2)
 
-            if k >= threshold:
-                extracted[b_idx] = 1
-            elif k <= -threshold:
-                extracted[b_idx] = 0
-            else:
-                extracted[b_idx] = -1
+            extracted[b_idx] = 1 if k >= 0.0 else 0
 
             b_idx += 1
         if b_idx >= wm_length:
@@ -173,13 +168,13 @@ class DWTDCT(Ready_Frequency_Embeddings):
         """
         Встраивает биты ЦВЗ в DCT-коэффициенты LL-подполосы после DWT.
 
-        :param input_image: матрица входного изображения (канал яркости Y).
-        :param watermark_bits: массив битов ЦВЗ.
+        :param input_image: RGB-изображение uint8 формы (H, W, 3).
+        :param watermark_bits: массив uint8 из значений 0/1.
         :param block_size: размер блока для DWT (должен быть равен 16).
         :param margin: величина модификации коэффициентов.
         :param threshold: порог для определения бита.
         :param wavelet_name: тип вейвлета (haar, db4, sym4).
-        :return output_image: матрица изображения с встроенным ЦВЗ.
+        :return output_image: RGB-изображение uint8 формы (H, W, 3) со встроенным ЦВЗ.
         """
         defaults = {
                     "input_image": None,
@@ -195,8 +190,41 @@ class DWTDCT(Ready_Frequency_Embeddings):
         if image is None or watermark is None:
             raise ValueError("input_image/image_path or watermark_bits not given")
 
-        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
-        cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(watermark, dtype=np.int32)
+        image_arr = np.asarray(image)
+        if image_arr.ndim != 3 or image_arr.shape[2] != 3:
+            raise ValueError(
+                f"input_image must have shape (H, W, 3), got {image_arr.shape}"
+            )
+        if image_arr.dtype != np.uint8:
+            raise TypeError(
+                f"input_image must have dtype uint8, got {image_arr.dtype}"
+            )
+
+        watermark_arr = np.asarray(watermark)
+        if watermark_arr.ndim != 1:
+            raise ValueError(
+                f"watermark_bits must be one-dimensional, got shape {watermark_arr.shape}"
+            )
+        if watermark_arr.dtype != np.uint8:
+            raise TypeError(
+                f"watermark_bits must have dtype uint8, got {watermark_arr.dtype}"
+            )
+        if watermark_arr.size == 0:
+            raise ValueError("watermark_bits must not be empty")
+        if np.any((watermark_arr != 0) & (watermark_arr != 1)):
+            raise ValueError("watermark_bits must contain only 0 and 1")
+
+        cdef cnp.ndarray[cnp.uint8_t, ndim=3, mode='c'] rgb_c = np.ascontiguousarray(image_arr)
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] input_y = np.ascontiguousarray(
+            0.299 * rgb_c[:, :, 0]
+            + 0.587 * rgb_c[:, :, 1]
+            + 0.114 * rgb_c[:, :, 2],
+            dtype=np.float64,
+        )
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = input_y.copy()
+        cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(
+            watermark_arr, dtype=np.int32
+        )
         cdef int block_size = int(args["block_size"])
         cdef double margin = args["margin"]
         cdef double threshold = args["threshold"]
@@ -252,25 +280,28 @@ class DWTDCT(Ready_Frequency_Embeddings):
                    &col_out_np[0], &row_out_np[0],
                    h_buf, g_buf, L_buf)
 
-        return watermarked_img
+        watermarked_y = np.asarray(watermarked_img, dtype=np.float64)
+        delta_y = watermarked_y - input_y
+        output_rgb = rgb_c.astype(np.float64) + delta_y[:, :, None]
+        return np.ascontiguousarray(
+            np.clip(np.rint(output_rgb), 0, 255).astype(np.uint8)
+        )
 
     @staticmethod
     def extraction(**args):
         """
         Извлекает биты ЦВЗ из DCT-коэффициентов LL-подполосы после DWT.
 
-        :param input_image: матрица изображения с ЦВЗ (канал яркости Y).
+        :param input_image: RGB-изображение uint8 формы (H, W, 3) с ЦВЗ.
         :param num_bits: длина ЦВЗ.
         :param block_size: размер блока для DWT.
-        :param threshold: порог для определения бита.
         :param wavelet_name: тип вейвлета.
-        :return extracted_wm: извлечённый ЦВЗ.
+        :return extracted_wm: извлечённый int8-массив из значений 0/1.
         """
         defaults = {
                     "input_image": None,
                     "num_bits": 0,
                     "block_size": 16,
-                    "threshold": 25.0,
                     "wavelet_name": "haar"
                 }
         args = {**defaults, **args}
@@ -279,10 +310,25 @@ class DWTDCT(Ready_Frequency_Embeddings):
         if image is None or not num_bits:
             raise ValueError("input_image/image_path or watermark_bits not given")
 
-        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(image, dtype=np.float64)
+        image_arr = np.asarray(image)
+        if image_arr.ndim != 3 or image_arr.shape[2] != 3:
+            raise ValueError(
+                f"input_image must have shape (H, W, 3), got {image_arr.shape}"
+            )
+        if image_arr.dtype != np.uint8:
+            raise TypeError(
+                f"input_image must have dtype uint8, got {image_arr.dtype}"
+            )
+
+        cdef cnp.ndarray[cnp.uint8_t, ndim=3, mode='c'] rgb_c = np.ascontiguousarray(image_arr)
+        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(
+            0.299 * rgb_c[:, :, 0]
+            + 0.587 * rgb_c[:, :, 1]
+            + 0.114 * rgb_c[:, :, 2],
+            dtype=np.float64,
+        )
         cdef int wm_length = num_bits
         cdef int block_size = int(args["block_size"])
-        cdef double threshold = args["threshold"]
         cdef bytes wavelet_name = args["wavelet_name"].encode('utf-8')
 
         cdef int H = img_c.shape[0]
@@ -327,11 +373,13 @@ class DWTDCT(Ready_Frequency_Embeddings):
 
         cdef double[:, :] img_view = img_c
 
-        _extract_core(img_view, blocks_h, blocks_w, extracted, wm_length, block_size, threshold,
+        _extract_core(img_view, blocks_h, blocks_w, extracted, wm_length, block_size,
                     block_np, LL_np, LH_np, HL_np, HH_np,
                     &temp_np[0], &row_a_np[0], &row_d_np[0],
                     &col_in_np[0], &col_a_np[0], &col_d_np[0],
                     &col_out_np[0], &row_out_np[0],
                     h_buf, g_buf, L_buf)
 
-        return extracted_wm
+        if np.any((extracted_wm != 0) & (extracted_wm != 1)):
+            raise RuntimeError("dwt_dct extraction produced a non-binary watermark")
+        return np.ascontiguousarray(extracted_wm, dtype=np.int8)
