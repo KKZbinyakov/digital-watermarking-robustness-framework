@@ -1,5 +1,10 @@
-"""Public configuration and solution-catalog API for the DWARF pipeline."""
+"""Public API for DWARF experiment configuration, discovery, datasets and planning."""
 
+from dwarf.pipeline.artifacts import (
+    ExtractedWatermark,
+    ImageArtifact,
+    OriginalWatermark,
+)
 from dwarf.pipeline.catalog import SolutionCatalog
 from dwarf.pipeline.config import (
     SCHEMA_VERSION,
@@ -22,13 +27,45 @@ from dwarf.pipeline.config import (
     WatermarkSpec,
 )
 from dwarf.pipeline.config_loader import load_experiment_config
+from dwarf.pipeline.datasets import DirectoryDatasetSource
 from dwarf.pipeline.exceptions import (
+    ArtifactValidationError,
     ConfigLoadError,
+    DatasetDiscoveryError,
+    DatasetIntegrityError,
+    DatasetLoadError,
+    DatasetManifestError,
+    DatasetSourceError,
+    PlanningError,
+    PlanTooLargeError,
     SemanticValidationError,
     SemanticValidationIssue,
     SolutionCatalogError,
     SolutionConflictError,
     SolutionDiscoveryError,
+)
+from dwarf.pipeline.manifest import (
+    MANIFEST_SCHEMA_VERSION,
+    DatasetManifest,
+    SampleReference,
+    make_sample_id,
+)
+from dwarf.pipeline.plan import (
+    PLAN_SCHEMA_VERSION,
+    AttackScenarioVariant,
+    AttackStepVariant,
+    EmbeddingVariant,
+    ExperimentCase,
+    MetricVariant,
+    PlanCounts,
+    WatermarkReference,
+    WorkUnit,
+)
+from dwarf.pipeline.planner import (
+    ExperimentPlan,
+    ExperimentPlanner,
+    build_experiment_plan,
+    derive_stable_seed,
 )
 from dwarf.pipeline.resolved import (
     ResolvedAttackScenario,
@@ -53,30 +90,52 @@ from dwarf.pipeline.solution_spec import (
 )
 
 __all__ = [
+    "MANIFEST_SCHEMA_VERSION",
+    "PLAN_SCHEMA_VERSION",
     "SCHEMA_VERSION",
     "UNSET",
     "ArtifactInputSpec",
     "ArtifactKind",
     "ArtifactReference",
+    "ArtifactValidationError",
     "AttackScenarioSpec",
+    "AttackScenarioVariant",
     "AttackStepSpec",
+    "AttackStepVariant",
     "ConfigLoadError",
     "DataContract",
+    "DatasetDiscoveryError",
+    "DatasetIntegrityError",
+    "DatasetLoadError",
+    "DatasetManifest",
+    "DatasetManifestError",
+    "DatasetSourceError",
+    "DirectoryDatasetSource",
     "DirectoryDatasetSpec",
     "EmbeddingSpec",
+    "EmbeddingVariant",
     "ExecutionSpec",
+    "ExperimentCase",
     "ExperimentConfig",
     "ExperimentMetadata",
+    "ExperimentPlan",
+    "ExperimentPlanner",
+    "ExtractedWatermark",
     "FixedBitsWatermarkSpec",
+    "ImageArtifact",
     "ImagePreprocessingSpec",
     "MetricBindingSpec",
+    "MetricVariant",
     "OperationSpec",
+    "OriginalWatermark",
     "OutputSpec",
-    "SolutionOperationSpec",
     "ParameterKind",
     "ParameterLinkSpec",
     "ParameterSpace",
     "ParameterSpec",
+    "PlanCounts",
+    "PlanTooLargeError",
+    "PlanningError",
     "RandomBitsWatermarkSpec",
     "ReportSpec",
     "ResolvedAttackScenario",
@@ -84,6 +143,7 @@ __all__ = [
     "ResolvedEmbedding",
     "ResolvedExperiment",
     "ResolvedMetric",
+    "SampleReference",
     "SemanticValidationError",
     "SemanticValidationIssue",
     "SolutionCatalog",
@@ -91,7 +151,13 @@ __all__ = [
     "SolutionConflictError",
     "SolutionDiscoveryError",
     "SolutionKind",
+    "SolutionOperationSpec",
     "SolutionSpec",
+    "WatermarkReference",
     "WatermarkSpec",
+    "WorkUnit",
+    "build_experiment_plan",
+    "derive_stable_seed",
     "load_experiment_config",
+    "make_sample_id",
 ]
