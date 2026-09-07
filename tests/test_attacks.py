@@ -496,3 +496,43 @@ def test_homomorphic_filter_higher_gamma_high_boosts_detail(mild, strong, photo)
     energy_mild = high_frequency_energy(run("Homomorphic_Filter", photo, gamma_high=mild))
     energy_strong = high_frequency_energy(run("Homomorphic_Filter", photo, gamma_high=strong))
     assert energy_strong > energy_mild
+
+
+@pytest.mark.parametrize("level", [0, 64, 128, 200, 255])
+def test_homomorphic_filter_keeps_uniform_frame(level):
+    """
+    Однотонный кадр обязан остаться однотонным и того же уровня.
+
+    Усиление в логарифмической области возвращается к масштабу входа по средней
+    яркости. Растягивание по минимуму и максимуму обращало бы такой кадр в чёрный:
+    у него минимум равен максимуму.
+    """
+    uniform = np.full((32, 32, 3), level, dtype=np.uint8)
+    result = run("Homomorphic_Filter", uniform)
+    assert mean_absolute_error(result, uniform) < 1.5
+
+
+@pytest.mark.parametrize("spike", [130, 180, 255])
+def test_homomorphic_filter_ignores_single_outlier(spike, photo):
+    """Один выброс не должен менять яркость всего кадра: нормировка идёт по среднему, а не по краям гистограммы."""
+    spiked = photo.copy()
+    spiked[0, 0] = spike
+
+    baseline = run("Homomorphic_Filter", photo).astype(np.float64)
+    result = run("Homomorphic_Filter", spiked).astype(np.float64)
+
+    assert abs(result.mean() - baseline.mean()) < 0.5
+
+
+@pytest.mark.parametrize("c", [0.0, -5.0, 10.001])
+def test_homomorphic_filter_rejects_invalid_steepness(c, small_photo):
+    with pytest.raises(ValueError):
+        run("Homomorphic_Filter", small_photo, c=c)
+
+
+@pytest.mark.parametrize("weak, strong", [(100.0, 10.0)])
+def test_homomorphic_filter_lower_cutoff_distorts_more(weak, strong, photo):
+    """Чем ниже частота среза, тем большая часть спектра попадает под усиление gamma_high."""
+    error_weak = mean_absolute_error(run("Homomorphic_Filter", photo, cutoff=weak), photo)
+    error_strong = mean_absolute_error(run("Homomorphic_Filter", photo, cutoff=strong), photo)
+    assert error_strong > error_weak
