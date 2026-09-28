@@ -1,310 +1,172 @@
 """
-Метод DCT (Discrete Cosine Transform) — встраивание в DCT-коэффициенты блоков 8×8.
-https://scispace.com/pdf/towards-robust-and-hidden-image-copyright-labeling-1hriyt4461.pdf
+Xiangguang Xiong
+An Improved DCT Based Color Image Watermarking Scheme (2016)
+https://www.atlantis-press.com/article/25866956.pdf
 """
 
+import operator
 import numpy as np
 cimport numpy as cnp
 from libc.math cimport fabs
 
 from dwarf.core.embedding_orchestrator.embedding_core import Ready_Frequency_Embeddings
-from dwarf.ready_solutions.utils.embedding_utils_pyx cimport init_dct_matrix, apply_dct_8x8, apply_idct_8x8, DBlock
+from dwarf.ready_solutions.utils.embedding_utils_pyx cimport (
+    DBlock, init_dct_matrix, apply_dct_8x8, apply_idct_8x8,
+    validate_rgb_image, rgb_to_ycbcr, ycbcr_to_rgb,
+)
 
 cnp.import_array()
 
-cdef void _embed_core(double[:, :] img_view, int blocks_h, int blocks_w,
-                      int[:] watermark, double margin, double threshold,
-                      int c1_row, int c1_col, int c2_row, int c2_col):
+
+cdef void _embed_core(double[:, :] image_y, Py_ssize_t blocks_w,
+                      const cnp.uint8_t[::1] watermark, double strength):
     """
-    Встраивание ЦВЗ.
-    
+    Встраивает биты ЦВЗ в пары DCT-коэффициентов блоков 8x8.
+
     Args:
-        img_view: представление изображения для записи.
-        blocks_h: количество блоков по высоте.
-        blocks_w: количество блоков по ширине.
-        watermark: ЦВЗ.
-        margin: величина, на которую модуль модифицируемого коэффициента
-            делается больше модуля второго коэффициента пары при встраивании.
-        threshold: минимально допустимая по модулю разность коэффициентов
-            пары, при которой блок уже пригоден для передачи нужного бита и не
-            требует модификации.
-        c1_row, c1_col: индекс первого DCT-коэффициента пары.
-        c2_row, c2_col: индекс второго DCT-коэффициента пары.
+        image_y: изменяемая яркостная матрица double формы (H, W).
+        blocks_w: число полных блоков 8x8 в строке изображения.
+        watermark: проверенный непрерывный массив uint8 с битами 0 и 1; длина не превышает ёмкость.
+        strength: положительная сила встраивания для пары коэффициентов [4, 1] и [3, 2].
     """
-    cdef DBlock block_img, block_dct, block_idct_arr
-    cdef int b_idx = 0
-    cdef int wm_len = watermark.shape[0]
-    cdef int bi, bj, r, c
-    cdef double c1, c2, k
+    cdef DBlock spatial, coeffs, restored
+    cdef Py_ssize_t index, y0, x0
+    cdef int r, c, bit
+    cdef double a, b, difference, delta
+    cdef bint flag
 
-    for bi in range(blocks_h):
-        for bj in range(blocks_w):
-            if b_idx >= wm_len:
-                break
-            for r in range(8):
-                for c in range(8):
-                    block_img[r][c] = img_view[bi*8 + r, bj*8 + c]
+    for index in range(watermark.shape[0]):
+        y0 = (index // blocks_w) * 8
+        x0 = (index % blocks_w) * 8
+        for r in range(8):
+            for c in range(8):
+                spatial[r][c] = image_y[y0 + r, x0 + c]
+        apply_dct_8x8(spatial, coeffs)
 
-            apply_dct_8x8(block_img, block_dct)
+        a = coeffs[4][1]
+        b = coeffs[3][2]
+        flag = a >= b
+        bit = watermark[index]
+        difference = fabs(a - b)
+        delta = (difference + strength) / 2.0
 
-            c1 = block_dct[c1_row][c1_col]
-            c2 = block_dct[c2_row][c2_col]
-            k = fabs(c1) - fabs(c2)
+        if not flag and bit == 0:
+            if difference < strength:
+                a -= delta
+                b += delta
+        elif flag and bit == 1:
+            if difference < strength:
+                a += delta
+                b -= delta
+        elif flag and bit == 0:
+            a -= delta
+            b += delta
+        else:
+            a += delta
+            b -= delta
 
-            if watermark[b_idx] == 1:
-                if k <= threshold:
-                    block_dct[c1_row][c1_col] = fabs(c2) + margin if c1 >= 0 else -(fabs(c2) + margin)
-            else:
-                if k >= -threshold:
-                    block_dct[c2_row][c2_col] = fabs(c1) + margin if c2 >= 0 else -(fabs(c1) + margin)
+        coeffs[4][1] = a
+        coeffs[3][2] = b
+        apply_idct_8x8(coeffs, restored)
+        for r in range(8):
+            for c in range(8):
+                image_y[y0 + r, x0 + c] = restored[r][c]
 
-            apply_idct_8x8(block_dct, block_idct_arr)
 
-            for r in range(8):
-                for c in range(8):
-                    img_view[bi*8 + r, bj*8 + c] = block_idct_arr[r][c]
-            b_idx += 1
-        if b_idx >= wm_len:
-            break
-
-cdef void _extract_core(double[:, :] img_view, int blocks_h, int blocks_w,
-                        int[:] extracted, int wm_length,
-                        int c1_row, int c1_col, int c2_row, int c2_col):
+cdef void _extract_core(const double[:, :] image_y, Py_ssize_t blocks_w,
+                        cnp.int8_t[::1] extracted):
     """
-    Извлечение ЦВЗ.
-    
+    Извлекает биты ЦВЗ сравнением пар DCT-коэффициентов.
+
     Args:
-        img_view: представление изображения с ЦВЗ.
-        blocks_h: количество блоков по высоте.
-        blocks_w: количество блоков по ширине.
-        extracted: выходной массив для извлечённых бит.
-        wm_length: длина ЦВЗ.
-        c1_row, c1_col: индекс первого DCT-коэффициента пары.
-        c2_row, c2_col: индекс второго DCT-коэффициента пары.
+        image_y: входная яркостная матрица double формы (H, W).
+        blocks_w: число полных блоков 8x8 в строке изображения.
+        extracted: выходной непрерывный массив int8; его длина задаёт число битов и не превышает ёмкость.
     """
-    cdef DBlock block_img, block_dct
-    cdef int b_idx = 0
-    cdef int bi, bj, r, c
-    cdef double c1, c2, k
+    cdef DBlock spatial, coeffs
+    cdef Py_ssize_t index, y0, x0
+    cdef int r, c
+    cdef double a, b
 
-    for bi in range(blocks_h):
-        for bj in range(blocks_w):
-            if b_idx >= wm_length:
-                break
-            for r in range(8):
-                for c in range(8):
-                    block_img[r][c] = img_view[bi*8 + r, bj*8 + c]
-            
-            apply_dct_8x8(block_img, block_dct)
-            
-            c1 = block_dct[c1_row][c1_col]
-            c2 = block_dct[c2_row][c2_col]
-            k = fabs(c1) - fabs(c2)
-
-            extracted[b_idx] = 1 if k >= 0.0 else 0
-            b_idx += 1
-        if b_idx >= wm_length:
-            break
+    for index in range(extracted.shape[0]):
+        y0 = (index // blocks_w) * 8
+        x0 = (index % blocks_w) * 8
+        for r in range(8):
+            for c in range(8):
+                spatial[r][c] = image_y[y0 + r, x0 + c]
+        apply_dct_8x8(spatial, coeffs)
+        a, b = coeffs[4][1], coeffs[3][2]
+        if a > b:
+            extracted[index] = 1
+        elif a < b:
+            extracted[index] = 0
+        else:
+            extracted[index] = -1
 
 
 class DCT(Ready_Frequency_Embeddings):
     @staticmethod
     def embedding(**args):
-        """
-        Встраивает биты ЦВЗ в DCT-коэффициенты блоков 8x8 изображения.
-        :param input_image: RGB-изображение uint8 формы (H, W, 3).
-        :param watermark_bits: массив uint8 из значений 0/1.
-        :param margin: величина, на которую модуль модифицируемого коэффициента
-            делается больше модуля второго коэффициента пары при встраивании.
-        :param threshold: минимально допустимая по модулю разность коэффициентов
-            пары, при которой блок уже пригоден для передачи нужного бита и не
-            требует модификации.
-        :param coef1_row: строка первого DCT-коэффициента пары (по умолчанию 3).
-        :param coef1_col: столбец первого DCT-коэффициента пары (по умолчанию 4).
-        :param coef2_row: строка второго DCT-коэффициента пары (по умолчанию 4).
-        :param coef2_col: столбец второго DCT-коэффициента пары (по умолчанию 3).
-            Пара по умолчанию сохранена для обратной совместимости. Она
-            чувствительна к Gaussian blur около sigma=1; для исследований
-            можно выбрать более низкочастотную пару без изменения ядра.
+        unknown = set(args) - {"input_image", "watermark_bits", "strength"}
+        if unknown:
+            raise TypeError(f"Unknown Xiong DCT embedding parameters: {sorted(unknown)}")
 
-        :return output_image: RGB-изображение uint8 формы (H, W, 3) со встроенным ЦВЗ.
-        """
-        defaults = {
-                    "input_image": None,
-                    "watermark_bits": None,
-                    "margin": 150.0,
-                    "threshold": 25.0,
-                    "coef1_row": 3,
-                    "coef1_col": 4,
-                    "coef2_row": 4,
-                    "coef2_col": 3
-                }
-        args = {**defaults, **args}
-        
-        image = args["input_image"]
-        watermark = args["watermark_bits"]
-        
-        if image is None or watermark is None:
-            raise ValueError("input_image/image_path or watermark_bits not given")
-
-        image_arr = np.asarray(image)
-        if image_arr.ndim != 3 or image_arr.shape[2] != 3:
-            raise ValueError(
-                f"input_image must have shape (H, W, 3), got {image_arr.shape}"
-            )
-        if image_arr.dtype != np.uint8:
-            raise TypeError(
-                f"input_image must have dtype uint8, got {image_arr.dtype}"
-            )
-
-        watermark_arr = np.asarray(watermark)
-        if watermark_arr.ndim != 1:
-            raise ValueError(
-                f"watermark_bits must be one-dimensional, got shape {watermark_arr.shape}"
-            )
-        if watermark_arr.dtype != np.uint8:
-            raise TypeError(
-                f"watermark_bits must have dtype uint8, got {watermark_arr.dtype}"
-            )
-        if watermark_arr.size == 0:
+        cdef cnp.ndarray rgb = validate_rgb_image(args.get("input_image"))
+        watermark = np.asarray(args.get("watermark_bits"))
+        if watermark.ndim != 1:
+            raise ValueError("watermark_bits must be a one-dimensional array")
+        if watermark.dtype != np.uint8:
+            raise TypeError("watermark_bits must have dtype uint8")
+        if watermark.size == 0:
             raise ValueError("watermark_bits must not be empty")
-        if np.any((watermark_arr != 0) & (watermark_arr != 1)):
+        if np.any((watermark != 0) & (watermark != 1)):
             raise ValueError("watermark_bits must contain only 0 and 1")
+        cdef double strength = float(args.get("strength", 16.0))
+        if not np.isfinite(strength) or strength <= 0:
+            raise ValueError("strength (K) must be finite and strictly positive")
 
-        cdef cnp.ndarray[cnp.uint8_t, ndim=3, mode='c'] rgb_c = np.ascontiguousarray(image_arr)
-        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] input_y = np.ascontiguousarray(
-            0.299 * rgb_c[:, :, 0]
-            + 0.587 * rgb_c[:, :, 1]
-            + 0.114 * rgb_c[:, :, 2],
-            dtype=np.float64,
-        )
-        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = input_y.copy()
-        cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] wm_c = np.ascontiguousarray(
-            watermark_arr, dtype=np.int32
-        )
-        cdef double margin = args["margin"]
-        cdef double threshold = args["threshold"]
-        cdef int c1_row = int(args["coef1_row"])
-        cdef int c1_col = int(args["coef1_col"])
-        cdef int c2_row = int(args["coef2_row"])
-        cdef int c2_col = int(args["coef2_col"])
+        cdef Py_ssize_t blocks_w = rgb.shape[1] // 8
+        cdef Py_ssize_t capacity = (rgb.shape[0] // 8) * blocks_w
+        cdef Py_ssize_t count = watermark.size
+        if count > capacity:
+            raise ValueError(f"Not enough capacity: requested {count} bits, available {capacity}")
 
-        if not (0 <= c1_row < 8 and 0 <= c1_col < 8 and
-                0 <= c2_row < 8 and 0 <= c2_col < 8):
-            raise ValueError("DCT coefficient indices must be in range [0, 7].")
-        if c1_row == c2_row and c1_col == c2_col:
-            raise ValueError("DCT coefficient pair must contain two distinct coefficients.")
-        if (c1_row == 0 and c1_col == 0) or (c2_row == 0 and c2_col == 0):
-            raise ValueError("The DC coefficient (0, 0) cannot be used for watermark embedding.")
-        
+        cdef cnp.ndarray wm = np.ascontiguousarray(watermark)
+        cdef cnp.ndarray ycbcr = rgb_to_ycbcr(rgb)
+        cdef double[:, :, ::1] channels = ycbcr
         init_dct_matrix()
-        
-        cdef int H = img_c.shape[0]
-        cdef int W = img_c.shape[1]
-        cdef int blocks_h = H // 8
-        cdef int blocks_w = W // 8
-        cdef int capacity = blocks_h * blocks_w
-        cdef int wm_len = wm_c.shape[0]
+        _embed_core(channels[:, :, 0], blocks_w, wm, strength)
 
-        if wm_len > capacity:
-            raise ValueError(
-                f"Not enough capacity: need {wm_len} blocks, available {capacity}."
-            )
-        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] watermarked_img = img_c.copy()
-        cdef double[:, :] img_view = watermarked_img
-        
-        _embed_core(
-            img_view, blocks_h, blocks_w, wm_c, margin, threshold,
-            c1_row, c1_col, c2_row, c2_col
-        )
-        
-        watermarked_y = np.asarray(watermarked_img, dtype=np.float64)
-        delta_y = watermarked_y - input_y
-        output_rgb = rgb_c.astype(np.float64) + delta_y[:, :, None]
-        return np.ascontiguousarray(
-            np.clip(np.rint(output_rgb), 0, 255).astype(np.uint8)
-        )
+        converted = ycbcr_to_rgb(channels)
+        result = rgb.copy()
+        full_rows, tail = divmod(count, blocks_w)
+        result[:full_rows * 8, :blocks_w * 8] = converted[:full_rows * 8, :blocks_w * 8]
+        if tail:
+            result[full_rows * 8:(full_rows + 1) * 8, :tail * 8] = converted[
+                full_rows * 8:(full_rows + 1) * 8, :tail * 8
+            ]
+        return result
 
     @staticmethod
     def extraction(**args):
-        """
-        Извлекает биты ЦВЗ из DCT-коэффициентов блоков 8x8 изображения.
-        :param input_image: RGB-изображение uint8 формы (H, W, 3) с ЦВЗ.
-        :param num_bits: длина ЦВЗ.
-        :param coef1_row: строка первого DCT-коэффициента пары.
-        :param coef1_col: столбец первого DCT-коэффициента пары.
-        :param coef2_row: строка второго DCT-коэффициента пары.
-        :param coef2_col: столбец второго DCT-коэффициента пары.
-            Все четыре индекса должны совпадать со значениями при встраивании.
-
-        :return extracted_wm: извлечённый int8-массив из значений 0/1.
-        """
-        defaults = {
-                    "input_image": None,
-                    "num_bits": 0,
-                    "coef1_row": 3,
-                    "coef1_col": 4,
-                    "coef2_row": 4,
-                    "coef2_col": 3
-                }
-        args = {**defaults, **args}
-        
-        image = args["input_image"]
-        num_bits = args["num_bits"]
-        
-        if image is None or not num_bits:
-            raise ValueError("input_image/image_path or num_bits not given")
-
-        image_arr = np.asarray(image)
-        if image_arr.ndim != 3 or image_arr.shape[2] != 3:
-            raise ValueError(
-                f"input_image must have shape (H, W, 3), got {image_arr.shape}"
-            )
-        if image_arr.dtype != np.uint8:
-            raise TypeError(
-                f"input_image must have dtype uint8, got {image_arr.dtype}"
-            )
-
-        cdef cnp.ndarray[cnp.uint8_t, ndim=3, mode='c'] rgb_c = np.ascontiguousarray(image_arr)
-        cdef cnp.ndarray[cnp.float64_t, ndim=2, mode='c'] img_c = np.ascontiguousarray(
-            0.299 * rgb_c[:, :, 0]
-            + 0.587 * rgb_c[:, :, 1]
-            + 0.114 * rgb_c[:, :, 2],
-            dtype=np.float64,
-        )
-        cdef int c1_row = int(args["coef1_row"])
-        cdef int c1_col = int(args["coef1_col"])
-        cdef int c2_row = int(args["coef2_row"])
-        cdef int c2_col = int(args["coef2_col"])
-
-        if not (0 <= c1_row < 8 and 0 <= c1_col < 8 and
-                0 <= c2_row < 8 and 0 <= c2_col < 8):
-            raise ValueError("DCT coefficient indices must be in range [0, 7].")
-        if c1_row == c2_row and c1_col == c2_col:
-            raise ValueError("DCT coefficient pair must contain two distinct coefficients.")
-        if (c1_row == 0 and c1_col == 0) or (c2_row == 0 and c2_col == 0):
-            raise ValueError("The DC coefficient (0, 0) cannot be used for watermark extraction.")
-        
+        unknown = set(args) - {"input_image", "num_bits"}
+        if unknown:
+            raise TypeError(f"Unknown Xiong DCT extraction parameters: {sorted(unknown)}")
+        cdef cnp.ndarray rgb = validate_rgb_image(args.get("input_image"))
+        value = args.get("num_bits")
+        if isinstance(value, (bool, np.bool_)):
+            raise TypeError("num_bits must be an integer, not bool")
+        try:
+            value = operator.index(value)
+        except TypeError:
+            raise TypeError("num_bits must be an integer") from None
+        cdef Py_ssize_t blocks_w = rgb.shape[1] // 8
+        cdef Py_ssize_t capacity = (rgb.shape[0] // 8) * blocks_w
+        if not 1 <= value <= capacity:
+            raise ValueError(f"num_bits must be in [1, {capacity}], got {value}")
+        cdef cnp.ndarray extracted = np.empty(value, dtype=np.int8)
+        cdef cnp.ndarray ycbcr = rgb_to_ycbcr(rgb)
+        cdef const double[:, :, ::1] channels = ycbcr
         init_dct_matrix()
-        
-        cdef int H = img_c.shape[0]
-        cdef int W = img_c.shape[1]
-        cdef int blocks_h = H // 8
-        cdef int blocks_w = W // 8
-        cdef int capacity = blocks_h * blocks_w
-
-        if num_bits > capacity:
-            raise ValueError(
-                f"Cannot extract {num_bits} bits: capacity is {capacity}."
-            )
-        cdef cnp.ndarray[cnp.int32_t, ndim=1, mode='c'] extracted_wm = np.zeros(num_bits, dtype=np.int32)
-        cdef double[:, :] img_view = img_c
-        
-        _extract_core(
-            img_view, blocks_h, blocks_w, extracted_wm, num_bits,
-            c1_row, c1_col, c2_row, c2_col
-        )
-        
-        if np.any((extracted_wm != 0) & (extracted_wm != 1)):
-            raise RuntimeError("dct extraction produced a non-binary watermark")
-        return np.ascontiguousarray(extracted_wm, dtype=np.int8)
+        _extract_core(channels[:, :, 0], blocks_w, extracted)
+        return extracted

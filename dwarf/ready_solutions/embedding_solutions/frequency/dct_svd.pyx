@@ -19,14 +19,14 @@ cnp.import_array()
 cdef void _embed_core(double[:, :] img_view, int blocks_h, int blocks_w,
                       int[:] watermark, double delta):
     """
-    Ядро встраивания ЦВЗ.
+    Встраивает биты QIM в сингулярные числа подматриц DCT.
 
     Args:
-        img_view: представление изображения для записи.
-        blocks_h: количество блоков по высоте.
-        blocks_w: количество блоков по ширине.
-        watermark: ЦВЗ.
-        delta: шаг квантования.
+        img_view: изменяемая яркостная матрица double формы (H, W).
+        blocks_h: число полных блоков 8x8 по высоте изображения.
+        blocks_w: число полных блоков 8x8 по ширине изображения.
+        watermark: одномерный массив int с битами 0 и 1; длина не превышает число блоков.
+        delta: положительный шаг QIM для старшего сингулярного числа подматрицы 4x4.
     """
     cdef DBlock block_img, block_dct, block_idct_arr
     cdef double svd_matrix[NN_SVD]
@@ -79,15 +79,15 @@ cdef void _embed_core(double[:, :] img_view, int blocks_h, int blocks_w,
 cdef void _extract_core(double[:, :] img_view, int blocks_h, int blocks_w,
                         int[:] extracted, int wm_length, double delta):
     """
-    Ядро извлечения ЦВЗ.
+    Извлекает биты QIM из сингулярных чисел подматриц DCT.
 
     Args:
-        img_view: представление изображения с ЦВЗ.
-        blocks_h: количество блоков по высоте.
-        blocks_w: количество блоков по ширине.
-        extracted: выходной массив для извлечённых бит.
-        wm_length: длина ЦВЗ.
-        delta: шаг квантования.
+        img_view: входная яркостная матрица double формы (H, W); не изменяется.
+        blocks_h: число полных блоков 8x8 по высоте изображения.
+        blocks_w: число полных блоков 8x8 по ширине изображения.
+        extracted: изменяемый выходной массив int длины не меньше wm_length.
+        wm_length: положительное число извлекаемых битов, не превышающее число блоков.
+        delta: положительный шаг QIM, использованный при встраивании.
     """
     cdef DBlock block_img, block_dct
     cdef double svd_matrix[NN_SVD]
@@ -121,15 +121,6 @@ cdef void _extract_core(double[:, :] img_view, int blocks_h, int blocks_w,
 class DCT_SVD(Ready_Frequency_Embeddings):
     @staticmethod
     def embedding(**args):
-        """
-        Встраивает биты ЦВЗ в сингулярные числа низкочастотной подматрицы
-        DCT-коэффициентов блоков 8x8.
-
-        :param input_image: RGB-изображение uint8 формы (H, W, 3).
-        :param watermark_bits: массив uint8 из значений 0/1.
-        :param delta: шаг квантования для QIM.
-        :return output_image: RGB-изображение uint8 формы (H, W, 3) со встроенным ЦВЗ.
-        """
         defaults = {
                     "input_image": None,
                     "watermark_bits": None,
@@ -207,15 +198,6 @@ class DCT_SVD(Ready_Frequency_Embeddings):
 
     @staticmethod
     def extraction(**args):
-        """
-        Извлекает биты ЦВЗ из сингулярных чисел низкочастотной подматрицы
-        DCT-коэффициентов блоков 8x8.
-
-        :param input_image: RGB-изображение uint8 формы (H, W, 3) с ЦВЗ.
-        :param num_bits: длина ЦВЗ.
-        :param delta: шаг квантования.
-        :return extracted_wm: извлечённый int8-массив из значений 0/1.
-        """
         defaults = {
                     "input_image": None,
                     "num_bits": 0,
