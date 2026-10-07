@@ -6,7 +6,6 @@ build-backend = "setuptools.build_meta"
 name = "dwarf"
 version = "0.0.1"
 description = "Фреймворк для автоматизированной оценки устойчивости алгоритмов встраивания цифровых водяных знаков."
-readme = "README.md"
 requires-python = ">=3.9"
 license = {text = "MIT"}
 authors = [
@@ -20,8 +19,6 @@ authors = [
 dependencies = [      # Эти зависимости устанавливаются при установке пакета
     "numpy>=1.24",
     "Pillow>=10.0",
-    "pydantic>=2.7,<3",
-    "PyYAML>=6.0.1,<7",
 ]
 
 [project.optional-dependencies]  # Эти зависимости устанавливаются при установке пакета с опциональными зависимостями pip install dwarf[ready_solutions]
@@ -39,15 +36,14 @@ metrics = [   # Нейросетевые метрики LPIPS, DISTS, NIQE и BR
 
 dev = [      # Это зависимости для разработки
     "pytest>=7.0.0",
-    "black>=22.0",
     "pytest-cov>=4.0",
     "Cython>=3.0.0",
     "setuptools>=42",
-    # Эталонные реализации для сверки метрик в tests/test_expertise.py и
-    # tests/test_attacks.py. Без них соответствующие проверки не падают,
-    # а молча пропускаются, поэтому список обязан совпадать с requirements-dev.txt.
-    "opencv-python-headless>=4.8",   # CLAHE
-    "scikit-image>=0.21",            # MSE, PSNR, SSIM
+    "ruff>=0.6",
+    # Эталонные реализации для сверки решений в tests/expertise и tests/attacks.
+    # Список обязан совпадать с requirements-dev.txt.
+    "opencv-python-headless>=4.8",   # Bilateral Filter и эталон CLAHE
+    "scikit-image>=0.21",            # эталон SSIM
     "sewar>=0.4.5",                  # MS-SSIM
     "scikit-learn>=1.3",             # accuracy, precision, recall, F1, AUC
 ]
@@ -62,14 +58,13 @@ Homepage = "https://github.com/KKZbinyakov/digital-watermarking-robustness-frame
 
 [tool.ruff]
 target-version = "py310"          # версия Python для совместимости
-line-length = 120                 # как в black (или 100/120 на ваш вкус)
+line-length = 120                 # единый предел для линтера и форматтера
 indent-width = 4
 
 # Общий exclude: действует и на ruff check, и на ruff format.
 # Внутри [tool.ruff.lint] он исключал бы файлы только из линтера.
 exclude = [
     "main.py",
-    "tests/*.py",
     "diagen.py",
 ]
 
@@ -81,10 +76,12 @@ docstring-code-format = true      # форматировать код в docstri
 
 # Ядро ещё не приводилось к ruff format. Пока это не сделано отдельной задачей,
 # форматтер его не трогает: иначе `ruff format .` создавал бы шумный диff в
-# чужих файлах при любой правке решений. Линтер (ruff check) на ядро действует.
+# чужих файлах при любой правке решений. Старый статический тест также пока
+# оставлен в исходном формате. Линтер (ruff check) на эти файлы действует.
 exclude = [
     "dwarf/__init__.py",
     "dwarf/core/**",
+    "tests/test_codestyle.py",
 ]
 
 [tool.ruff.lint]

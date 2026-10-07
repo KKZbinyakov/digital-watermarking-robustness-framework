@@ -74,16 +74,3 @@ def detector():
     y_pred = np.array([1, 0, 1, 0, 0, 1, 1, 0, 1, 0])
     y_scores = np.array([0.9, 0.1, 0.8, 0.35, 0.2, 0.7, 0.6, 0.3, 0.85, 0.4])
     return {"y_true": y_true, "y_pred": y_pred, "y_scores": y_scores}
-
-
-def solutions(registry):
-    """
-    Оставляет только конкретные реализации, отбрасывая категории Ready_*.
-
-    Args:
-        registry (dict): реестр решений вида имя -> класс
-
-    Returns:
-        dict: реестр без абстрактных категорий
-    """
-    return {name: cls for name, cls in registry.items() if not name.startswith("Ready_")}

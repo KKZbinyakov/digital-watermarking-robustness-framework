@@ -8,8 +8,6 @@ on:
       - '**.pyx'
       - '**.toml'
       - '**.txt'
-      - '**.yaml'
-      - '**.yml'
       - '.github/workflows/**'
   pull_request:
     branches: [main]
@@ -18,8 +16,6 @@ on:
       - '**.pyx'
       - '**.toml'
       - '**.txt'
-      - '**.yaml'
-      - '**.yml'
       - '.github/workflows/**'
   workflow_dispatch:
 
@@ -34,7 +30,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  # Ворота пайплайна: пока тесты и линтер не прошли, диаграмма не собирается
+  # Ворота CI: пока тесты и линтер не прошли, диаграмма не собирается
   # и на Pages ничего не уезжает.
   test:
     runs-on: ubuntu-latest

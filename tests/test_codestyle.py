@@ -23,25 +23,17 @@ CYRILLIC = re.compile(r"[А-Яа-яЁё]")
 KNOWN_VIOLATIONS = {
     "warnings_are_english": {
         "dwarf/core/utils/utils.py",
-        "dwarf/ready_solutions/embedding_solutions/spatial/lsb.py",
     },
     "no_relative_imports": {
         "dwarf/__init__.py",
         "dwarf/core/__init__.py",
     },
-    "defaults_cover_every_used_key": {
-        "dwarf/ready_solutions/embedding_solutions/spatial/lsb.py",
-    },
-    "solutions_do_not_take_paths": {
-        "dwarf/ready_solutions/embedding_solutions/spatial/lsb.py",
-    },
 }
 """Известные нарушения, лежащие вне текущей зоны работ.
-Файлы ядра правилам пока не соответствуют, но их правка — отдельная задача;
-lsb.py ждёт перевода встраиваний на матричный контракт. Долг записан пофайлово
-и попроверочно, помечен xfail(strict=True) и потому виден в отчёте CI. Когда
-файл починят, strict превратит неожиданный успех в падение и напомнит убрать
-запись отсюда.
+Файлы ядра правилам пока не соответствуют, но их правка — отдельная задача.
+Долг записан пофайлово и попроверочно, помечен xfail(strict=True) и потому
+виден в отчёте CI. Когда файл починят, strict превратит неожиданный успех в
+падение и напомнит убрать запись отсюда.
 """
 
 

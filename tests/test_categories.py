@@ -3,13 +3,13 @@
 import inspect
 
 import pytest
-from conftest import solutions
 
-import dwarf.ready_solutions  # noqa: F401  наполняет реестры всех категорий
+import dwarf.ready_solutions.attack_solutions  # noqa: F401  наполняет реестр атак
+import dwarf.ready_solutions.expertise_solutions  # noqa: F401  наполняет реестр экспертиз
 from dwarf.core.attack_orchestrator.attack_core import Attack_Core
 from dwarf.core.expertise_orchestrator.expertise_core import Expertise_Core
 
-SUFFIXES = ("_Attacks", "_Expertise", "_Embeddings", "_Datasets")
+SUFFIXES = ("_Attacks", "_Expertise")
 
 
 def category_folder(base_name):
@@ -29,8 +29,13 @@ def category_folder(base_name):
     return name.lower()
 
 
-REGISTERED = list(solutions(Attack_Core.get_registered_attacks()).values()) + list(
-    solutions(Expertise_Core.get_registered_expertises()).values()
+def concrete_solutions(registry):
+    """Return concrete implementations, excluding abstract Ready_* categories."""
+    return [solution for name, solution in registry.items() if not name.startswith("Ready_")]
+
+
+REGISTERED = concrete_solutions(Attack_Core.get_registered_attacks()) + concrete_solutions(
+    Expertise_Core.get_registered_expertises()
 )
 
 
