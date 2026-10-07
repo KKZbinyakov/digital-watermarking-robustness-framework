@@ -1,0 +1,1 @@
+"""Категория: spread-spectrum."""
