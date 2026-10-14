@@ -1,39 +1,48 @@
 import json
 import multiprocessing
-import os
+import sqlite3
 import time
+from multiprocessing import shared_memory
+from multiprocessing.queues import Queue as MPQueue
+from multiprocessing.synchronize import Event as MPEvent
 from pathlib import Path
-from queue import Full
+from queue import Empty, Full
 
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
 
 from dwarf.core.dwarf_exceptions import Dwarf_Exception
-from dwarf.core.utils.utils import file_to_hash
+from dwarf.core.logs.logger import logger
 
+
+def make_shm_name(run_id: str, image_id: str) -> str:
+    return f"dwarf_{run_id}_{image_id}"[:255]
+
+DEAD_PILL = None
 
 class Ds_Core:
     """
-    Общая логика для датасета. Анализирует директорию датасета, загружает картинки, приводит их к нужной конфигурации, загружает в очередь пак данных. Все проверки, которые есть на данный момент - условные и могут не нести смысла.
+    Общая логика для датасета. На пайплайне - загрузчик изображений. Анализирует директорию датасета, загружает картинки, приводит их к нужной конфигурации, загружает в очередь пак данных. Все проверки, которые есть на данный момент - условные и могут не нести смысла.
 
     Args:
         config (dict): Конфигурация
 
     Attributes:
         queue (multiprocessing.Queue): Очередь
-        queues_state (list): Состояние очередей
+        queue_state: Состояние очереди
         source (str): Путь к директории с датасетом
         image_type (type): Тип изображения
         image_color_model (str): Модель цвета
         image_geometry (list): Геометрия изображения
         extensions (list): Список расширений
 
-        MANIFEST_FILE_NAME (str): Имя/путь файла манифеста
-        FAILOVER_FILE (str): Имя/путь файла failover.json
+        MANIFEST_FILE_NAME (str): Имя файла манифеста
+        MANIFEST_FILE_PATH (str): Путь к файлу манифеста
+        FAILOVER_FILE_PATH (str): Путь к файлу failover.json
         RETRY_COUNT (int): Количество попыток отправить данные в очередь
         BUFFER_LIMIT (int): Лимит локального буфера
 
-        local_buffers (list): Локальные буферы
+        local_buffer: Локальный буфер
 
 
     Methods:
@@ -56,18 +65,27 @@ class Ds_Core:
         Dwarf_Exception: Ошибка
     """
     def __init__(self, config: dict):
-        self.queues: list[multiprocessing.Queue] = config.get("queue")
-        self.queues_state: list[bool] = None #= [True for _ in range(len(self.queues))]
+        self.queue_ready: multiprocessing.Queue = config.get("queue_ready")
+        self.queue_free: multiprocessing.Queue = config.get("queue_free")
+        self.queue_state: bool = True
         self.source: str = config.get("source")
-        self.image_type: type = config.get("image_type")
+        self.image_type: type = np.uint8
         self.image_color_model: str = config.get("image_color_model")
         self.image_geometry: list = config.get("image_geometry")
+        self.image_color_models: list[str] = ["RGB", "RGBA", "CMYK", "L"]
         self.extensions: list = [".png", ".jpg", ".bmp"]
-        self.MANIFEST_FILE_NAME = "manifest.json"
-        self.FAILOVER_FILE = "failover.json"
+        self.MANIFEST_FILE_PATH = config.get("manifest_file_path")
         self.RETRY_COUNT = 3
         self.BUFFER_LIMIT = 10
-        self.local_buffers = None #[[] for _ in range(len(self.queues))]
+        self.local_buffer = []
+        self.stop_event = config.get("stop_event")
+        self.run_id = config.get("run_id")
+        self.image_id = None
+        self.shm_refs: dict[str, shared_memory.SharedMemory] = {}
+        self.exif_transpose = config.get("exif_transpose", True)
+        self.resample = config.get("resample", "lanczos")
+        self.db_conn = None
+        self.database_path = config.get("database_path")
 
     def check_state(self) -> bool:
         """
@@ -80,34 +98,37 @@ class Ds_Core:
             path = Path(self.source)
             if not (path.exists() and path.is_dir()):
                 raise Dwarf_Exception(f"Path {path} does not exist or is not a directory")
-            for queue in self.queues:
-                if not isinstance(queue, multiprocessing.Queue):
-                    raise Dwarf_Exception(f"Queue {queue} is not a multiprocessing.Queue")
-            self.queues_state = [True for _ in range(len(self.queues))]
-            self.local_buffers = [[] for _ in range(len(self.queues))]
-            self.MANIFEST_FILE_NAME = self.source + "/" + self.MANIFEST_FILE_NAME
-            self.FAILOVER_FILE = self.source + "/" + self.FAILOVER_FILE
-
+            if not isinstance(self.queue_ready, MPQueue):
+                raise Dwarf_Exception("config['queue'] is not a multiprocessing.Queue")
+            if self.image_color_model not in self.image_color_models:
+                raise Dwarf_Exception(f"config['image_color_model'] is not in {self.image_color_models}")
+            if self.image_geometry is not None:
+                if not isinstance(self.image_geometry, (list, tuple)) or len(self.image_geometry) != 2:
+                    raise Dwarf_Exception("image_geometry must be None or a sequence of 2 ints")
+                if not all(isinstance(x, int) and x > 0 for x in self.image_geometry):
+                    raise Dwarf_Exception("image_geometry values must be positive ints")
+            if self.stop_event is None or not isinstance(self.stop_event, MPEvent):
+                raise Dwarf_Exception("config['stop_event'] is not a multiprocessing.Event")
+            if not isinstance(self.exif_transpose, bool):
+                raise Dwarf_Exception("config['exif_transpose'] is not a bool")
+            if not isinstance(self.queue_free, MPQueue):
+                raise Dwarf_Exception("config['queue_free'] is not a multiprocessing.Queue")
+            if self.run_id is None:
+                raise Dwarf_Exception("config['run_id'] is not ready")
+            if self.MANIFEST_FILE_PATH is None:
+                raise Dwarf_Exception("config['manifest_file_path'] is not ready")
+            if self.database_path is None:
+                raise Dwarf_Exception("config['database_path'] is not ready")
+            self.db_conn = self.open_db(self.database_path)
+            try:
+                self.init_db()
+            except Exception:
+                self.db_conn.close()
+                self.db_conn = None
+                raise
         except Exception as e:
             raise Dwarf_Exception(f"Failed to check state: {e}") from e
         return True
-
-    def generate_file_manifest(self) -> bool:
-        folder = Path(self.source)
-        try:
-            with open(self.MANIFEST_FILE_NAME, "w") as f:
-                for extension in self.extensions:
-                    for file_path in folder.rglob("*" + extension):
-                        abs_path = file_path.absolute()
-                        file_info = {
-                            "name": file_path.name,
-                            "path": str(abs_path),
-                            "hash": file_to_hash(abs_path)
-                        }
-                        f.write(json.dumps(file_info) + "\n")
-            return True
-        except Exception as e:
-            raise Dwarf_Exception(f"Failed to generate manifest: {e}") from e
 
     def image_to_type(self, image: Image) -> np.ndarray:
         """
@@ -123,21 +144,22 @@ class Ds_Core:
             Dwarf_Exception: Ошибка
         """
         try:
-            match self.image_type:
-                case np.float32:
-                    img_numpy = np.array(image, dtype=np.float32)
-                case np.float64:
-                    img_numpy = np.array(image, dtype=np.float64)
-                case np.int32:
-                    img_numpy = np.array(image, dtype=np.int32)
-                case np.int64:
-                    img_numpy = np.array(image, dtype=np.int64)
-                case np.uint32:
-                    img_numpy = np.array(image, dtype=np.uint32)
-                case np.uint64:
-                    img_numpy = np.array(image, dtype=np.uint64)
-                case _:
-                    raise Dwarf_Exception("Incorrect image type")
+            # match self.image_type:
+            #     case np.float32:
+            #         img_numpy = np.array(image, dtype=np.float32)
+            #     case np.float64:
+            #         img_numpy = np.array(image, dtype=np.float64)
+            #     case np.int32:
+            #         img_numpy = np.array(image, dtype=np.int32)
+            #     case np.int64:
+            #         img_numpy = np.array(image, dtype=np.int64)
+            #     case np.uint32:
+            #         img_numpy = np.array(image, dtype=np.uint32)
+            #     case np.uint64:
+            #         img_numpy = np.array(image, dtype=np.uint64)
+            #     case _:
+            #         raise Dwarf_Exception("Incorrect image type")
+            img_numpy = np.array(image, dtype=self.image_type)
             return img_numpy
         except Exception as e:
             raise Dwarf_Exception(f"Failed to convert image to type: {e}") from e
@@ -185,8 +207,16 @@ class Ds_Core:
             Dwarf_Exception: Ошибка
         """
         try:
-            img = image.resize(self.image_geometry)
-            return img
+            resample_map = {
+                "nearest": Image.Resampling.NEAREST,
+                "bilinear": Image.Resampling.BILINEAR,
+                "bicubic": Image.Resampling.BICUBIC,
+                "lanczos": Image.Resampling.LANCZOS,
+            }
+            if self.image_geometry is not None:
+                resample = resample_map[self.resample]
+                image = image.resize(tuple(self.image_geometry), resample=resample)
+            return image
         except Exception as e:
             raise Dwarf_Exception(f"Failed to convert image to correct geometry: {e}") from e
 
@@ -204,121 +234,161 @@ class Ds_Core:
             Dwarf_Exception: Ошибка
         """
         try:
-            image = self.image_to_color_model(image)
+            if self.exif_transpose:
+                image = ImageOps.exif_transpose(image)
             image = self.image_to_correct_geometry(image)
+            image = self.image_to_color_model(image)
             image = self.image_to_type(image)
             return image
         except Exception as e:
             raise Dwarf_Exception(f"Failed to format image: {e}") from e
 
-    def save_buffer_to_file(self, target_idx):
-        """
-        Сохранение буфера в файл
-
-        Args:
-            target_idx (int): Индекс целевой очереди
-
-        Raises:
-            Dwarf_Exception: Ошибка
-        """
-        try:
-            with open(self.FAILOVER_FILE + "_" + str(target_idx), "a") as f:
-                for image in self.local_buffers[target_idx]:
-                    f.write(json.dumps(image) + "\n")
-        except Exception as e:
-            raise Dwarf_Exception(f"Failed to save buffer to file: {e}") from e
-
-    def try_send_with_buffer(self, target_idx, data: dict):
-        """
-        Попытка отправить данные в очередь
-
-        Args:
-            target_idx (int): Индекс целевой очереди
-            data (dict): Данные для отправки
-
-        Returns:
-            bool: True, если данные успешно отправлены, False в противном случае
-        """
-        try:
-            if not self.queues_state[target_idx]:
-                raise Dwarf_Exception(f"Queue {target_idx} is already dead")
-            queue = self.queues[target_idx]
+    def put_ready_with_retry(self, handle: dict) -> bool:
+        while not self.stop_event.is_set():
             try:
-                queue.put(data, timeout=0.01)
+                self.queue_ready.put(handle, timeout=0.5)
                 return True
             except Full:
-                self.local_buffers[target_idx].append(data)
-                if len(self.local_buffers[target_idx]) >= self.BUFFER_LIMIT:
-                    self.save_buffer_to_file(target_idx)
-                    self.local_buffers[target_idx].clear()
-            except (BrokenPipeError, OSError):
-                self.queues_state[target_idx] = False
-                # Добавить лог ошибки
-        except Exception as e:
-            raise Dwarf_Exception(f"Failed to send data to queue {queue}: {e}") from e
+                self.drain_free_queue()
+                continue
+            except (BrokenPipeError, OSError) as e:
+                logger.error_with_context(e)
+                self.queue_state = False
+                return False
+        return False
 
-    def process_failover(self):
+    def send_dead_pill(self, mode = "fast"):
         """
-        Обработка failover
+        Отправка сигнала о завершении сета картинок для эксперимента
 
         Raises:
             Dwarf_Exception: Ошибка
         """
-        for target_idx in range(len(self.queues)):
-            try:
-                with open(self.FAILOVER_FILE + "_" + str(target_idx)) as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            try:
-                                data = json.loads(line)
-                            except Exception:
-                                # raise Dwarf_Exception(f"Failed to load failover of file {line}: {e}")
-                                continue
-                            queue = self.queues[target_idx]
-                            if not self.queues_state[target_idx]:
-                                raise Dwarf_Exception(f"Queue {target_idx} is already dead, failover is not running")
-                            for _i in range(self.RETRY_COUNT):
-                                try:
-                                    queue.put(data, timeout=0.01)
-                                    break
-                                except Full:
-                                    time.sleep(0.1)
-                                    continue
-                                except (BrokenPipeError, OSError):
-                                    self.queues_state[target_idx] = False
-                                    break
-                        except Exception as e:
-                            raise Dwarf_Exception(f"Failed to load manifest of file {line} after {self.RETRY_COUNT} tries: {e}") from e
-                os.remove(self.FAILOVER_FILE + "_" + str(target_idx))
-            except Exception as e:
-                raise Dwarf_Exception(f"Failed to process failover for queue {target_idx}: {e}") from e
+        match mode:
+            case "fast":
+                try:
+                    if not self.queue_state:
+                        return
+                    empty_since = None
 
-    def send_dead_pill(self):
-        """
-        Отправка сигнала о завершении в очередь
+                    while self.shm_refs and not self.stop_event.is_set():
+                        self.drain_free_queue()
+                        if not self.shm_refs:
+                            break
 
-        Raises:
-            Dwarf_Exception: Ошибка
-        """
-        try:
-            for target_idx in range(len(self.queues)):
-                if not self.queues_state[target_idx]:
-                    continue
-                path = self.FAILOVER_FILE + "_" + str(target_idx)
-                if os.path.exists(path):
-                    print(f"File {path} still exists, skipping")
-                    continue
-                else:
+                        now = time.monotonic()
+                        if self.queue_ready.empty():
+                            if empty_since is None:
+                                empty_since = now
+                            elif now - empty_since >= 30.0:
+                                break
+                        else:
+                            empty_since = None
+
+                        self.stop_event.wait(timeout=0.1)
+
+                    self.drain_free_queue()
                     try:
-                        self.queues[target_idx].put(None, timeout=0.5)
-                        self.queues_state[target_idx] = False
+                        self.queue_ready.put(DEAD_PILL, block=True, timeout=5)
+                        logger.log("Sended dead pill to Queue")
+                    except (BrokenPipeError, OSError) as e:
+                        self.queue_state = False
+                        logger.error_with_context(e)
+                        return
                     except Exception as e:
-                        raise Dwarf_Exception(f"Failed to send dead pill to queue {target_idx}: {e}") from e
-        except Exception as e:
-            raise Dwarf_Exception(f"Failed to send dead pill: {e}") from e
+                        logger.error_with_context(e)
+                        return
+                except Exception as e:
+                    logger.error_with_context(e)
+            case "long":
+                try:
+                    if not self.queue_state:
+                        return
+                    dead_pill_retry_count = 3
+                    while dead_pill_retry_count > 0:
+                        try:
+                            self.queue_ready.put(None, block=True)
+                            logger.log("Sended dead pill to Queue")
+                            break
+                        except (BrokenPipeError, OSError) as e:
+                            self.queue_state = False
+                            logger.error_with_context(e)
+                            break
+                        except Exception as e:
+                            logger.error_with_context(e)
+                            dead_pill_retry_count -= 1
+                            time.sleep(10)
+                            if dead_pill_retry_count == 0:
+                                logger.log("Failed to send dead pill to Queue")
+                                break
+                except Exception as e:
+                    logger.error_with_context(e)
+
+    def save_to_shm(self, numpy_image: np.ndarray) -> dict:
+        shm_name = make_shm_name(self.run_id, self.image_id)
+        try:
+            shm = shared_memory.SharedMemory(create=True, size=numpy_image.nbytes, name=shm_name)
+        except FileExistsError:
+            old = shared_memory.SharedMemory(name=shm_name)
+            old.close()
+            old.unlink()
+            shm = shared_memory.SharedMemory(create=True, size=numpy_image.nbytes, name=shm_name)
+        view = np.ndarray(numpy_image.shape, dtype=numpy_image.dtype, buffer=shm.buf)
+        view[:] = numpy_image[:]
+        self.shm_refs[self.image_id] = shm
+        handle = {
+            "image_id": self.image_id,
+            "shm_name": shm_name,
+            "shape": numpy_image.shape,
+            "dtype": str(numpy_image.dtype),
+            "nbytes": numpy_image.nbytes
+        }
+        return handle
+
+    def drain_free_queue(self) -> None:
+        while True:
+            try:
+                image_id = self.queue_free.get_nowait()
+            except Empty:
+                return
+            shm = self.shm_refs.pop(image_id, None)
+            if shm is None:
+                continue
+            try:
+                shm.close()
+                shm.unlink()
+            except Exception as e:
+                logger.error_with_context(e)
+
+    def mark_done(self, image_id: str) -> None:
+        self.db_conn.execute(
+            "INSERT OR IGNORE INTO processed_images (image_id) VALUES (?)",
+            (image_id,),
+        )
+
+    def check_done_picture(self) -> bool:
+        cursor = self.db_conn.execute("SELECT 1 FROM processed_images WHERE image_id = ? LIMIT 1", (self.image_id,),)
+        return cursor.fetchone() is not None
+
+    def open_db(self, dp_path: str) -> sqlite3.Connection:
+        conn = sqlite3.connect(
+            dp_path,
+            isolation_level=None,
+            check_same_thread=False,
+        )
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute("PRAGMA busy_timeout=5000")
+        return conn
+
+    def init_db(self) -> None:
+        self.db_conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS processed_images (
+                image_id TEXT PRIMARY KEY
+            ) WITHOUT ROWID
+            """
+        )
 
     def main_loop(self):
         """
@@ -327,62 +397,46 @@ class Ds_Core:
         Raises:
             Dwarf_Exception: Ошибка
         """
-        if not self.check_state():
-            raise Dwarf_Exception("State is incorrect, main loop is not running")
-
-        if not self.generate_file_manifest():
-            raise Dwarf_Exception("Failed to generate manifest")
-
         try:
-            manifest_file_path = self.MANIFEST_FILE_NAME
-            with open(manifest_file_path) as f:
+            if not self.check_state():
+                raise Dwarf_Exception("State is incorrect, main loop is not running")
+            with open(self.MANIFEST_FILE_PATH) as f:
                 for line in f:
+                    self.drain_free_queue()
+                    if self.stop_event.is_set():
+                        break
                     line = line.strip()
                     if not line:
                         continue
                     try:
                         data = json.loads(line)
-                        if data["hash"] != file_to_hash(data["path"]):
-                            print(f"Hash of file {data['path']} is incorrect")
+                        self.image_id = data["image_id"]
+                        if  self.check_done_picture():
+                            logger.log(f"Picture {data['image_id']} is already processed")
                             continue
-                        raw_image = Image.open(data["path"])
-                        numpy_image = self.formatter(raw_image)
-                            #raise Dwarf_Exception(f"Hash of file {data['path']} is incorrect")
-
-                        data_to_send = {
-                            "name": data["name"],
-                            "image": numpy_image
-                        }
-
-                        for target_idx in range(len(self.queues)):
-                            self.try_send_with_buffer(target_idx, data_to_send)
-
+                        try:
+                            with Image.open(data["path"]) as raw_image:
+                                numpy_image = self.formatter(raw_image)
+                        except Exception as e:
+                            logger.error_with_context(e)
+                            continue
+                        handle = self.save_to_shm(numpy_image)
+                        if not self.put_ready_with_retry(handle):
+                            break
+                        else:
+                            self.mark_done(self.image_id)
                     except Exception as e:
-                        print(f"Failed to load manifest of file {line}: {e}")
+                        logger.error_with_context(e)
                         continue
-                        # raise Dwarf_Exception(f"Failed to load manifest of file {line}: {e}")
-            for idx in range(len(self.local_buffers)):
-                if self.local_buffers[idx]:
-                    self.save_buffer_to_file(idx)
-                    self.local_buffers[idx].clear()
-
-            self.process_failover()
-            self.send_dead_pill()
         except Exception as e:
-            raise Dwarf_Exception(f"Failed to run main loop: {e}") from e
+            logger.error_with_context(e)
         finally:
             try:
-                for target_idx in range(len(self.queues)):
-                    self.save_buffer_to_file(target_idx)
-            except Exception as e:
                 self.send_dead_pill()
-                raise Dwarf_Exception(f"Failed to save buffer to file in finally: {e}") from e
+            except Exception as e:
+                logger.error_with_context(e)
             try:
-                self.process_failover()
+                if self.db_conn is not None:
+                    self.db_conn.close()
             except Exception as e:
-                self.send_dead_pill()
-                raise Dwarf_Exception(f"Failed to process failover in finally: {e}") from e
-            try:
-                self.send_dead_pill()
-            except Exception as e:
-                raise Dwarf_Exception(f"Failed to send dead pill in finally: {e}") from e
+                logger.error_with_context(e)

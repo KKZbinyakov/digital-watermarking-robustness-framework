@@ -37,6 +37,7 @@ embeded.jpg
 croped.jpg
 logs/*.log
 report.txt
+failover.log
 
 # ---- Cython build artifacts ----
 dwarf/**/*.c

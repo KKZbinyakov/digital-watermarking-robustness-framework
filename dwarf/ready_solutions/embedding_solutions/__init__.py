@@ -21,4 +21,5 @@ if _uncompiled:
         stacklevel=2,
     )
 
-del _available, _name, _stems, _uncompiled
+for _var in ("_available", "_name", "_stems", "_uncompiled"):
+    globals().pop(_var, None)

@@ -1,0 +1,101 @@
+schema_version: 1
+
+experiment:
+  name: adc-abw-large-coco
+  description: Large-scale ADC-ABW robustness evaluation on COCO val2017 under JPEG compression.
+  seed: 42
+  repeats: 3                     # 3 повтора для оценки стабильности
+  max_cases: 10000000            # Увеличен лимит для большого плана
+  allow_large_plan: true         # Разрешаем большой план
+  tags: [frequency, large, coco]
+
+plugins:
+  - dwarf.ready_solutions
+
+dataset:
+  type: directory
+  path: images/val2017      # Укажите здесь путь к папке с изображениями COCO
+  recursive: true
+  extensions: [.jpg, .jpeg]
+  include: []
+  exclude: []
+  limit: 10                    # Используем весь val2017 (5000 изображений)
+  shuffle: false
+  preprocessing:
+    color_mode: RGB
+    resize: [512, 512]
+    resample: lanczos
+    exif_transpose: true
+
+watermark:
+  type: random_bits
+  length: 64
+  scope: fixed_for_run
+
+embeddings:
+  - id: adc_abw
+    name: ADC_ABW
+    embedding:
+      params:
+        fixed:
+          attack_angle: 20.0       # Снижено с 30.0 для уменьшения сбоев квантования
+          spreading_length: 320
+          num_blocks: 128
+          key: 0
+    extraction:
+      params:
+        fixed:
+          spreading_length: 320
+          num_blocks: 128
+          key: 0
+
+attack_scenarios:
+  - id: clean
+    description: No attack; baseline extraction from the embedded image.
+    steps: []
+
+  - id: jpeg
+    description: JPEG quality variants for robustness assessment.
+    steps:
+      - name: Jpeg
+        params:
+          grid:
+            quality: [10, 20, 30, 40, 50, 60, 70, 80, 90, 95]  # Расширенный диапазон
+
+metrics:
+  - id: embedding-psnr
+    name: PSNR
+    checkpoint: after_embedding
+    inputs:
+      original_image: original_image
+      distorted_image: embedded_image
+
+  - id: attack-psnr
+    name: PSNR
+    checkpoint: after_attack
+    inputs:
+      original_image: embedded_image
+      distorted_image: attacked_image
+
+execution:
+  backend: process
+  workers: auto
+  max_in_flight: auto
+  start_method: auto
+  fail_fast: false
+  show_progress: true
+
+output:
+  directory: ../../runs_large
+  database: sqlite
+  database_filename: results_large.sqlite3
+  save_images: none
+  exports: [csv]
+  overwrite: true                # Обнуляем БД для чистого запуска
+
+report:
+  enabled: false
+  formats: [csv]
+  group_by: [embedding, attack_scenario, metric]
+  include_failures: true
+  float_precision: 6
