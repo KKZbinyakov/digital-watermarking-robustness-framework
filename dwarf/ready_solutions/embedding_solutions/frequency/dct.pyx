@@ -122,12 +122,14 @@ cdef void _extract_core(const double[:, :] image_y, Py_ssize_t blocks_w,
 class DCT(Ready_Frequency_Embeddings):
     @staticmethod
     def embedding(**args):
-        unknown = set(args) - {"input_image", "watermark_bits", "strength"}
+        defaults = {"input_image": None, "watermark_bits": None, "strength": 16.0}
+        unknown = set(args) - defaults.keys()
         if unknown:
             raise TypeError(f"Unknown Xiong DCT embedding parameters: {sorted(unknown)}")
+        args = {**defaults, **args}
 
-        cdef cnp.ndarray ycbcr = _validate_ycbcr_image(args.get("input_image"))
-        watermark = np.asarray(args.get("watermark_bits"))
+        cdef cnp.ndarray ycbcr = _validate_ycbcr_image(args["input_image"])
+        watermark = np.asarray(args["watermark_bits"])
         if watermark.ndim != 1:
             raise ValueError("watermark_bits must be a one-dimensional array")
         if watermark.dtype != np.uint8:
@@ -136,7 +138,7 @@ class DCT(Ready_Frequency_Embeddings):
             raise ValueError("watermark_bits must not be empty")
         if np.any((watermark != 0) & (watermark != 1)):
             raise ValueError("watermark_bits must contain only 0 and 1")
-        cdef double strength = float(args.get("strength", 16.0))
+        cdef double strength = float(args["strength"])
         if not np.isfinite(strength) or strength <= 0:
             raise ValueError("strength (K) must be finite and strictly positive")
 
@@ -156,11 +158,13 @@ class DCT(Ready_Frequency_Embeddings):
 
     @staticmethod
     def extraction(**args):
-        unknown = set(args) - {"input_image", "num_bits"}
+        defaults = {"input_image": None, "num_bits": None}
+        unknown = set(args) - defaults.keys()
         if unknown:
             raise TypeError(f"Unknown Xiong DCT extraction parameters: {sorted(unknown)}")
-        cdef cnp.ndarray ycbcr = _validate_ycbcr_image(args.get("input_image"))
-        value = args.get("num_bits")
+        args = {**defaults, **args}
+        cdef cnp.ndarray ycbcr = _validate_ycbcr_image(args["input_image"])
+        value = args["num_bits"]
         if isinstance(value, (bool, np.bool_)):
             raise TypeError("num_bits must be an integer, not bool")
         try:
