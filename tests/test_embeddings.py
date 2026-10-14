@@ -1,4 +1,7 @@
-"""Контрактные и round-trip тесты всех зарегистрированных embedding-решений."""
+"""Контрактные и round-trip тесты embedding-решений с RGB uint8 API.
+
+DCT использует YCbCr float64; его контракт проверяется в test_dct_ycbcr.py.
+"""
 
 import numpy as np
 import pytest
@@ -12,7 +15,7 @@ from dwarf import Embedding_Core
 EMBEDDINGS = {
     name: cls
     for name, cls in Embedding_Core.get_registered_embeddings().items()
-    if not name.startswith("Ready_")
+    if not name.startswith("Ready_") and name != "DCT"
 }
 NAMES = sorted(EMBEDDINGS)
 

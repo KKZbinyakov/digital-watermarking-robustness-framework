@@ -12,10 +12,25 @@ from libc.math cimport fabs
 from dwarf.core.embedding_orchestrator.embedding_core import Ready_Frequency_Embeddings
 from dwarf.ready_solutions.utils.embedding_utils_pyx cimport (
     DBlock, init_dct_matrix, apply_dct_8x8, apply_idct_8x8,
-    validate_rgb_image, rgb_to_ycbcr, ycbcr_to_rgb,
 )
 
 cnp.import_array()
+
+
+cdef cnp.ndarray _validate_ycbcr_image(object image):
+    """Проверяет структуру YCbCr-массива без преобразования его каналов."""
+    if image is None:
+        raise ValueError("input_image is required")
+    arr = np.asarray(image)
+    if arr.ndim != 3 or arr.shape[2] != 3:
+        raise ValueError(f"input_image must have shape (H, W, 3) in Y, Cb, Cr order, got {arr.shape}")
+    if arr.dtype != np.float64:
+        raise TypeError(f"input_image must be YCbCr with dtype float64, got {arr.dtype}")
+    if arr.shape[0] < 8 or arr.shape[1] < 8:
+        raise ValueError("input_image must contain at least one complete 8x8 block")
+    if not np.all(np.isfinite(arr)):
+        raise ValueError("input_image must contain only finite YCbCr values")
+    return np.ascontiguousarray(arr)
 
 
 cdef void _embed_core(double[:, :] image_y, Py_ssize_t blocks_w,
@@ -111,7 +126,7 @@ class DCT(Ready_Frequency_Embeddings):
         if unknown:
             raise TypeError(f"Unknown Xiong DCT embedding parameters: {sorted(unknown)}")
 
-        cdef cnp.ndarray rgb = validate_rgb_image(args.get("input_image"))
+        cdef cnp.ndarray ycbcr = _validate_ycbcr_image(args.get("input_image"))
         watermark = np.asarray(args.get("watermark_bits"))
         if watermark.ndim != 1:
             raise ValueError("watermark_bits must be a one-dimensional array")
@@ -125,26 +140,18 @@ class DCT(Ready_Frequency_Embeddings):
         if not np.isfinite(strength) or strength <= 0:
             raise ValueError("strength (K) must be finite and strictly positive")
 
-        cdef Py_ssize_t blocks_w = rgb.shape[1] // 8
-        cdef Py_ssize_t capacity = (rgb.shape[0] // 8) * blocks_w
+        cdef Py_ssize_t blocks_w = ycbcr.shape[1] // 8
+        cdef Py_ssize_t capacity = (ycbcr.shape[0] // 8) * blocks_w
         cdef Py_ssize_t count = watermark.size
         if count > capacity:
             raise ValueError(f"Not enough capacity: requested {count} bits, available {capacity}")
 
         cdef cnp.ndarray wm = np.ascontiguousarray(watermark)
-        cdef cnp.ndarray ycbcr = rgb_to_ycbcr(rgb)
-        cdef double[:, :, ::1] channels = ycbcr
+        cdef cnp.ndarray result = ycbcr.copy()
+        cdef double[:, :, ::1] channels = result
         init_dct_matrix()
         _embed_core(channels[:, :, 0], blocks_w, wm, strength)
 
-        converted = ycbcr_to_rgb(channels)
-        result = rgb.copy()
-        full_rows, tail = divmod(count, blocks_w)
-        result[:full_rows * 8, :blocks_w * 8] = converted[:full_rows * 8, :blocks_w * 8]
-        if tail:
-            result[full_rows * 8:(full_rows + 1) * 8, :tail * 8] = converted[
-                full_rows * 8:(full_rows + 1) * 8, :tail * 8
-            ]
         return result
 
     @staticmethod
@@ -152,7 +159,7 @@ class DCT(Ready_Frequency_Embeddings):
         unknown = set(args) - {"input_image", "num_bits"}
         if unknown:
             raise TypeError(f"Unknown Xiong DCT extraction parameters: {sorted(unknown)}")
-        cdef cnp.ndarray rgb = validate_rgb_image(args.get("input_image"))
+        cdef cnp.ndarray ycbcr = _validate_ycbcr_image(args.get("input_image"))
         value = args.get("num_bits")
         if isinstance(value, (bool, np.bool_)):
             raise TypeError("num_bits must be an integer, not bool")
@@ -160,12 +167,11 @@ class DCT(Ready_Frequency_Embeddings):
             value = operator.index(value)
         except TypeError:
             raise TypeError("num_bits must be an integer") from None
-        cdef Py_ssize_t blocks_w = rgb.shape[1] // 8
-        cdef Py_ssize_t capacity = (rgb.shape[0] // 8) * blocks_w
+        cdef Py_ssize_t blocks_w = ycbcr.shape[1] // 8
+        cdef Py_ssize_t capacity = (ycbcr.shape[0] // 8) * blocks_w
         if not 1 <= value <= capacity:
             raise ValueError(f"num_bits must be in [1, {capacity}], got {value}")
         cdef cnp.ndarray extracted = np.empty(value, dtype=np.int8)
-        cdef cnp.ndarray ycbcr = rgb_to_ycbcr(rgb)
         cdef const double[:, :, ::1] channels = ycbcr
         init_dct_matrix()
         _extract_core(channels[:, :, 0], blocks_w, extracted)

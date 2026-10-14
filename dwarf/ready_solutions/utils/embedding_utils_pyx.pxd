@@ -6,9 +6,6 @@ ctypedef double DBlock[8][8]
 cdef void init_dct_matrix()
 cdef void apply_dct_8x8(const double block_img[8][8], double block_dct[8][8]) noexcept nogil
 cdef void apply_idct_8x8(const double block_dct[8][8], double block_img[8][8]) noexcept nogil
-cdef cnp.ndarray validate_rgb_image(object image)
-cdef cnp.ndarray rgb_to_ycbcr(const cnp.uint8_t[:, :, ::1] rgb)
-cdef cnp.ndarray ycbcr_to_rgb(const double[:, :, ::1] ycbcr)
 
 
 cdef object dwt_integer(object name, object value, object lower, object upper)
