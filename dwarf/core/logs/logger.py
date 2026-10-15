@@ -84,7 +84,7 @@ class SimpleLogger:
                 self.logger.addHandler(fh)
                 self._handlers[channel] = fh
             except Exception as e:
-                print(f"Error of creation handler-а for channel '{channel}': {e}")
+                print(f"Error of creation handler for channel '{channel}': {e}")
 
         atexit.register(self.cleanup)
         self._initialized = True
