@@ -24,6 +24,7 @@ from dwarf.pipeline_core.worker import init_worker, run_case
 def _run_loader(loader_config):
     Ds_Core(config=loader_config).main_loop()
 
+
 def compute_run_id(config) -> str:
     cfg = {
         "schema_version": config.schema_version,
@@ -43,8 +44,15 @@ def compute_run_id(config) -> str:
         "attack_scenarios": [s.model_dump(mode="json") for s in config.attack_scenarios],
         "metrics": [m.model_dump(mode="json") for m in config.metrics],
     }
-    return sha256(json.dumps(cfg, sort_keys=True, separators=(",", ":"),
-        ensure_ascii=False,).encode("utf-8")).hexdigest()[:12]
+    return sha256(
+        json.dumps(
+            cfg,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()[:12]
+
 
 def canonical_preprocessing(spec: ImagePreprocessingSpec) -> str:
     """
@@ -61,6 +69,7 @@ def canonical_preprocessing(spec: ImagePreprocessingSpec) -> str:
         ensure_ascii=False,
     )
 
+
 def compute_image_id(
     relative_path: Path | str,
     preprocessing: ImagePreprocessingSpec,
@@ -74,6 +83,7 @@ def compute_image_id(
     rel = Path(relative_path).as_posix()
     payload = f"{rel}|{canonical_preprocessing(preprocessing)}"
     return sha256(payload.encode("utf-8")).hexdigest()[:16]
+
 
 def generate_file_manifest(
     source: Path,
@@ -150,6 +160,7 @@ def generate_file_manifest(
     except Exception as e:
         raise Dwarf_Exception(f"Failed to generate manifest: {e}") from e
 
+
 class Parent:
     def __init__(self, config):
         self.config: ExperimentConfig = config
@@ -224,7 +235,7 @@ class Parent:
             "exif_transpose": self.config.dataset.preprocessing.exif_transpose,
             "resample": self.config.dataset.preprocessing.resample,
             "database_path": self.db_path,
-            }
+        }
         self.loader = mp.Process(target=_run_loader, args=(loader_config,), daemon=False)
         self.loader.start()
 
@@ -424,8 +435,8 @@ class Parent:
             self.db.close()
 
             if self.unsaved_results_count:
-                logger.error_with_context(Dwarf_Exception(f"Ended pipeline with unsaved results: {self.unsaved_results_count}"))
+                logger.error_with_context(
+                    Dwarf_Exception(f"Ended pipeline with unsaved results: {self.unsaved_results_count}")
+                )
             else:
                 logger.log("Ended pipeline!")
-
-

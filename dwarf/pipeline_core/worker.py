@@ -13,6 +13,7 @@ from dwarf.pipeline_core.case_builder import Case
 
 _WORKER_STATE = {}
 
+
 def init_worker(plugin_paths, watermark_spec, experiment_seed, output_spec, output_directory):
     global _WORKER_STATE
     for path in plugin_paths:
@@ -22,6 +23,7 @@ def init_worker(plugin_paths, watermark_spec, experiment_seed, output_spec, outp
     _WORKER_STATE["output_spec"] = output_spec
     _WORKER_STATE["output_directory"] = output_directory
 
+
 def bind_inputs(bindings, runtime):
     out = {}
     for name, artifact in bindings.items():
@@ -30,6 +32,7 @@ def bind_inputs(bindings, runtime):
             value = np.stack([value] * 3, axis=-1)
         out[name] = value
     return out
+
 
 def generate_watermark(spec: dict, base_seed: int, case_seed: int, image_id: str) -> np.ndarray:
     """Детерминированно порождает ЦВЗ для одного кейса.
@@ -59,12 +62,16 @@ def generate_watermark(spec: dict, base_seed: int, case_seed: int, image_id: str
     rng = np.random.default_rng(seed_value)
     return rng.integers(0, 2, size=length, dtype=np.uint8)
 
+
 def run_metrics(checkpoint, metrics, runtime, result):
     for metric in metrics:
         if metric.checkpoint == checkpoint:
             bound_inputs = bind_inputs(metric.inputs, runtime)
-            result["metrics"][metric.id] = Expertise_Core.get_expertise_class_by_name(metric.name).expertise(**bound_inputs, **metric.params)
+            result["metrics"][metric.id] = Expertise_Core.get_expertise_class_by_name(metric.name).expertise(
+                **bound_inputs, **metric.params
+            )
     return result
+
 
 def run_case(case: Case) -> dict:
     global _WORKER_STATE
@@ -90,18 +97,15 @@ def run_case(case: Case) -> dict:
         runtime = {
             "input_image": image,
             "original_image": image,
-
             "watermark": watermark,
             "original_watermark": watermark,
             "watermark_bits": watermark,
             "original_bits": watermark,
             "num_bits": len(watermark),
-
             "embedded_image": None,
             "attacked_image": None,
             "distorted_image": None,
             "output_image": None,
-
             "extracted_watermark": None,
             "extracted_bits": None,
         }
@@ -139,7 +143,6 @@ def run_case(case: Case) -> dict:
     finally:
         shm.close()
 
-    logger.log(f"case {case.case_id}: status={result['status']}, "
-           f"error={result['error']}, metrics={result['metrics']}")
+    logger.log(f"case {case.case_id}: status={result['status']}, error={result['error']}, metrics={result['metrics']}")
 
     return result

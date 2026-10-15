@@ -6,7 +6,6 @@ from dwarf.core.logs.logger import logger
 
 
 class SQLite_DB:
-
     def __init__(self):
         self.conn = None
         self.lock = threading.Lock()
@@ -75,15 +74,12 @@ class SQLite_DB:
         self.require_conn()
         with self.lock:
             cur = self.conn.execute(
-                "INSERT OR IGNORE INTO cases (case_id, image_id, status) "
-                "VALUES (?, ?, 'dispatching')",
+                "INSERT OR IGNORE INTO cases (case_id, image_id, status) VALUES (?, ?, 'dispatching')",
                 (case_id, image_id),
             )
             if cur.rowcount == 1:
                 return None
-            row = self.conn.execute(
-                "SELECT status FROM cases WHERE case_id = ?", (case_id,)
-            ).fetchone()
+            row = self.conn.execute("SELECT status FROM cases WHERE case_id = ?", (case_id,)).fetchone()
             return row[0] if row else None
 
     def flush_results(self, buffer: list[tuple[str, str, str | None, str | None]]) -> None:
@@ -92,8 +88,7 @@ class SQLite_DB:
             self.conn.execute("BEGIN")
             try:
                 self.conn.executemany(
-                    "UPDATE cases SET status = ?, result_json = ?, error = ? "
-                    "WHERE case_id = ?",
+                    "UPDATE cases SET status = ?, result_json = ?, error = ? WHERE case_id = ?",
                     [(status, result_json, error, case_id) for case_id, status, result_json, error in buffer],
                 )
                 self.conn.execute("COMMIT")
@@ -101,4 +96,3 @@ class SQLite_DB:
                 logger.error_with_context(e)
                 self.conn.execute("ROLLBACK")
                 raise
-

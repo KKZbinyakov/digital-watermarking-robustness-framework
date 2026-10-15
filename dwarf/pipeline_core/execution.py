@@ -12,11 +12,13 @@ def resolve_workers(execution: ExecutionSpec) -> int:
         return max(1, cpu - 1)
     return workers
 
+
 def resolve_start_method(execution: ExecutionSpec) -> str:
     method = execution.start_method
     if method != "auto":
         return method
     return "spawn"
+
 
 def resolve_in_flight(execution: ExecutionSpec, workers: int) -> int:
     if isinstance(execution.max_in_flight, int):

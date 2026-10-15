@@ -17,13 +17,16 @@ def compute_case_id(canonical_payload) -> str:
     """
     return sha256(canonical_payload.encode("utf-8")).hexdigest()[:16]
 
+
 def seed(base_seed: int, case_id: str) -> int:
     payload = f"{base_seed}:{case_id}".encode()
     return int.from_bytes(sha256(payload).digest()[:8], "big")
 
+
 def canonical(object):
     object = dict(object)
     return json.dumps(object, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
 
 def expand(space: ParameterSpace) -> Iterator[dict[str, Any]]:
 
@@ -50,10 +53,12 @@ def expand(space: ParameterSpace) -> Iterator[dict[str, Any]]:
 
     yield dict(base)
 
+
 @dataclasses.dataclass(frozen=True)
 class ResolvedAttackStep:
     name: str
     params: Mapping[str, Any]
+
 
 @dataclasses.dataclass(frozen=True)
 class ResolvedMetric:
@@ -62,6 +67,7 @@ class ResolvedMetric:
     checkpoint: str
     inputs: Mapping[str, str]
     params: Mapping[str, Any]
+
 
 @dataclasses.dataclass(frozen=True)
 class Case:
@@ -83,6 +89,7 @@ class Case:
     attack_chain: tuple[ResolvedAttackStep, ...]
     metrics: tuple[ResolvedMetric, ...]
 
+
 class Case_Builder:
     def __init__(self, config):
         self.config = config
@@ -99,8 +106,7 @@ class Case_Builder:
 
     def count_cases(self):
         embedding_count = sum(
-            emb.embedding.params.declared_variant_count
-            * emb.extraction.params.declared_variant_count
+            emb.embedding.params.declared_variant_count * emb.extraction.params.declared_variant_count
             for emb in self.config.embeddings
         )
 
@@ -115,12 +121,7 @@ class Case_Builder:
         for metric in self.config.metrics:
             metric_count *= metric.params.declared_variant_count
 
-        return (
-            embedding_count
-            * attack_count
-            * metric_count
-            * self.config.experiment.repeats
-        )
+        return embedding_count * attack_count * metric_count * self.config.experiment.repeats
 
     def make_case(self, emb, emb_params, ext_params, scen, attack_chain, metrics, repeat):
         payload = {
@@ -140,12 +141,20 @@ class Case_Builder:
         case_id = compute_case_id(canonical_payload)
         case_seed = seed(self.config.experiment.seed, case_id)
         return Case(
-            case_id=case_id, image_id=self.image_id, seed=case_seed,
+            case_id=case_id,
+            image_id=self.image_id,
+            seed=case_seed,
             repeat_index=repeat,
-            shm_name=self.shm_name, image_shape=self.image_shape, image_dtype=self.image_dtype,
-            embedding_id=emb.id, embedding_name=emb.name, embedding_params=emb_params,
-            extraction_name=emb.name, extraction_params=ext_params,
-            attack_chain=attack_chain, metrics=metrics,
+            shm_name=self.shm_name,
+            image_shape=self.image_shape,
+            image_dtype=self.image_dtype,
+            embedding_id=emb.id,
+            embedding_name=emb.name,
+            embedding_params=emb_params,
+            extraction_name=emb.name,
+            extraction_params=ext_params,
+            attack_chain=attack_chain,
+            metrics=metrics,
         )
 
     def build_cases(self):
@@ -158,21 +167,27 @@ class Case_Builder:
             for scen in self.config.attack_scenarios
         }
 
+        all_metrics = []
+
+        for combo in self.metric_combos:
+            all_metrics.append(tuple(
+                ResolvedMetric(
+                    id=m.id, name=m.name, checkpoint=m.checkpoint, inputs=m.inputs, params=params
+                )
+                for m, params in zip(self.config.metrics, combo, strict=True)
+            ))
+
         for emb in self.config.embeddings:
             for emb_params in expand(emb.embedding.params):
                 for ext_params in expand(emb.extraction.params):
                     for scen in self.config.attack_scenarios:
-                        for combo in self.step_combos_by_scen[scen.id]:
+                        for step_combo in self.step_combos_by_scen[scen.id]:
                             attack_chain = tuple(
                                 ResolvedAttackStep(name=step.name, params=params)
-                                for step, params in zip(scen.steps, combo, strict=True)
+                                for step, params in zip(scen.steps, step_combo, strict=True)
                             )
-                            for combo in self.metric_combos:
-                                metrics = tuple(
-                                    ResolvedMetric(id=m.id, name=m.name, checkpoint=m.checkpoint,
-                                                inputs=m.inputs, params=params)
-                                    for m, params in zip(self.config.metrics, combo, strict=True)
-                                )
+                            for metrics in all_metrics:
                                 for repeat in range(self.config.experiment.repeats):
-                                    yield self.make_case(emb, emb_params, ext_params, scen, attack_chain, metrics, repeat)
-
+                                    yield self.make_case(
+                                        emb, emb_params, ext_params, scen, attack_chain, metrics, repeat
+                                    )
