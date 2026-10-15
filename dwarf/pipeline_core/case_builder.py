@@ -170,12 +170,12 @@ class Case_Builder:
         all_metrics = []
 
         for combo in self.metric_combos:
-            all_metrics.append(tuple(
-                ResolvedMetric(
-                    id=m.id, name=m.name, checkpoint=m.checkpoint, inputs=m.inputs, params=params
+            all_metrics.append(
+                tuple(
+                    ResolvedMetric(id=m.id, name=m.name, checkpoint=m.checkpoint, inputs=m.inputs, params=params)
+                    for m, params in zip(self.config.metrics, combo, strict=True)
                 )
-                for m, params in zip(self.config.metrics, combo, strict=True)
-            ))
+            )
 
         for emb in self.config.embeddings:
             for emb_params in expand(emb.embedding.params):
