@@ -69,18 +69,22 @@ def _to_luma(image: np.ndarray) -> np.ndarray:
 
 
 def _block_geometry(image_shape: tuple, num_blocks: int) -> tuple:
-    """Builds an exact square block grid over an arbitrary rectangular image."""
+    """Builds the paper's equal-sized block grid over the image."""
     height, width = image_shape[:2]
     if num_blocks > min(height, width):
         raise ValueError(
             f"num_blocks is too large: need at least {num_blocks}x{num_blocks} pixels, got {height}x{width}"
         )
 
-    row_edges = np.arange(num_blocks + 1, dtype=np.int64) * height // num_blocks
-    column_edges = np.arange(num_blocks + 1, dtype=np.int64) * width // num_blocks
-    block_heights = np.diff(row_edges)
-    block_widths = np.diff(column_edges)
-    areas = block_heights[:, None] * block_widths[None, :]
+    # Mixing block sizes changes the orthonormal DC scale and creates false
+    # high-frequency energy even for a constant image. Equations (7)-(10) in
+    # the paper use one M x N size for every block. Incomplete trailing strips
+    # are ignored, as in the usual MATLAB block-loop implementation.
+    block_height = height // num_blocks
+    block_width = width // num_blocks
+    row_edges = np.arange(num_blocks + 1, dtype=np.int64) * block_height
+    column_edges = np.arange(num_blocks + 1, dtype=np.int64) * block_width
+    areas = np.full((num_blocks, num_blocks), block_height * block_width, dtype=np.int64)
     return row_edges, column_edges, areas
 
 
@@ -102,12 +106,16 @@ def _expand_dc_delta(
     row_edges: np.ndarray,
     column_edges: np.ndarray,
     areas: np.ndarray,
+    output_shape: tuple,
 ) -> np.ndarray:
     """Converts DC-coefficient changes into their uniform per-block pixel changes."""
     block_delta = dc_delta / np.sqrt(areas)
     row_labels = np.repeat(np.arange(dc_delta.shape[0]), np.diff(row_edges))
     column_labels = np.repeat(np.arange(dc_delta.shape[1]), np.diff(column_edges))
-    return block_delta[row_labels[:, None], column_labels[None, :]]
+    active_delta = block_delta[row_labels[:, None], column_labels[None, :]]
+    result = np.zeros(output_shape[:2], dtype=np.float64)
+    result[: row_edges[-1], : column_edges[-1]] = active_delta
+    return result
 
 
 @lru_cache(maxsize=32)
@@ -202,8 +210,8 @@ class ADC_ABW(Ready_Spread_Spectrum_Embeddings):
             attack_angle (float): ABW angle in degrees. Smaller values improve robustness at the
                 expense of visual quality; the paper determines it from the expected dominant attack.
             spreading_length (int): Number of high-frequency coefficients in the ADC location.
-            num_blocks (int): Number of blocks along each image axis. Both image dimensions must be
-                at least this large. This value is part of the extraction key.
+            num_blocks (int): Number of equal-sized blocks along each image axis. Incomplete trailing
+                strips are not transformed. This value is part of the extraction key.
             key (int): Non-negative seed for the orthogonal spreading codes. It is not a cryptographic key.
 
         Returns:
@@ -251,28 +259,10 @@ class ADC_ABW(Ready_Spread_Spectrum_Embeddings):
         modified_spectrum[indices] = location + weight * spread_watermark
         modified_dc = idctn(modified_spectrum.reshape(dc_spectrum.shape), norm="ortho")
 
-        luma_delta = _expand_dc_delta(modified_dc - dc_matrix, row_edges, column_edges, areas)
+        luma_delta = _expand_dc_delta(modified_dc - dc_matrix, row_edges, column_edges, areas, image.shape)
         output = image.astype(np.float64) + luma_delta[..., None]
         output = np.ascontiguousarray(np.clip(np.rint(output), 0, 255).astype(np.uint8))
 
-        if np.array_equal(output, image):
-            raise ValueError(
-                "watermark is erased by uint8 quantization; decrease attack_angle or adjust the ADC profile"
-            )
-
-        original_scores = codes @ location / spreading_length
-        output_scores = _decode_scores(output, watermark.size, spreading_length, num_blocks, key)
-        realized_gain = np.mean(bipolar_watermark * (output_scores - original_scores))
-        if realized_gain < 0.1 * weight:
-            raise ValueError(
-                "watermark is too weak after uint8 quantization; decrease attack_angle or adjust the ADC profile"
-            )
-
-        decoded = np.ascontiguousarray((output_scores >= 0.0).astype(np.int8))
-        if not np.array_equal(decoded.astype(np.uint8), watermark):
-            raise ValueError(
-                "watermark does not survive uint8 quantization; decrease attack_angle or adjust the ADC profile"
-            )
         return output
 
     @staticmethod

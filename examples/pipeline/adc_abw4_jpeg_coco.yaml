@@ -1,0 +1,101 @@
+schema_version: 1
+
+experiment:
+  name: adc-abw4-jpeg-coco
+  description: ADC-ABW4 paper profile evaluation on COCO val2017 under JPEG compression.
+  seed: 42
+  repeats: 3
+  max_cases: 10000000
+  allow_large_plan: true
+  tags: [frequency, adc-abw4, jpeg, coco]
+
+plugins:
+  - dwarf.ready_solutions
+
+dataset:
+  type: directory
+  path: images/val2017      # Путь к папке COCO val2017
+  recursive: true
+  extensions: [.jpg, .jpeg]
+  include: []
+  exclude: []
+  limit: 10                 # Быстрый прогон; увеличьте до 5000 для всего val2017
+  shuffle: false
+  preprocessing:
+    color_mode: RGB
+    resize: [512, 512]
+    resample: lanczos
+    exif_transpose: true
+
+watermark:
+  type: random_bits
+  length: 64
+  scope: fixed_for_run
+
+embeddings:
+  - id: adc_abw4
+    name: ADC_ABW
+    embedding:
+      params:
+        fixed:
+          attack_angle: 30.0
+          spreading_length: 320
+          num_blocks: 128
+          key: 0
+    extraction:
+      params:
+        fixed:
+          spreading_length: 320
+          num_blocks: 128
+          key: 0
+
+attack_scenarios:
+  - id: clean
+    description: No attack; baseline extraction from the embedded image.
+    steps: []
+
+  - id: jpeg
+    description: JPEG quality variants for robustness assessment.
+    steps:
+      - name: Jpeg
+        params:
+          grid:
+            quality: [10, 20, 30, 40, 50, 60, 70, 80, 90, 95]
+
+metrics:
+  - id: embedding-psnr
+    name: PSNR
+    checkpoint: after_embedding
+    inputs:
+      original_image: original_image
+      distorted_image: embedded_image
+
+  - id: attack-psnr
+    name: PSNR
+    checkpoint: after_attack
+    inputs:
+      original_image: embedded_image
+      distorted_image: attacked_image
+
+execution:
+  backend: process
+  workers: auto
+  max_in_flight: auto
+  start_method: auto
+  fail_fast: false
+  show_progress: true
+
+output:
+  directory: ../../runs_adc_abw4_jpeg_coco
+  database: sqlite
+  database_filename: results.sqlite3
+  save_images: none
+  exports: [csv]
+  overwrite: true
+
+report:
+  enabled: false
+  formats: [csv]
+  group_by: [embedding, attack_scenario, metric]
+  include_failures: true
+  float_precision: 6
