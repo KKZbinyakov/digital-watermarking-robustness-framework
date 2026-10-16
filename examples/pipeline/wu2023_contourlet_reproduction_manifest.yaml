@@ -1,0 +1,79 @@
+paper:
+  title: A Robust Image Watermarking Scheme Based on Image Normalization and Contourlet Transform
+  doi: 10.1109/ACCESS.2023.3319669
+  implementation_environment: MATLAB 2010a
+
+published_parameters:
+  host_size: [512, 512]
+  watermark_size: [32, 32]
+  roi_size: [256, 256]
+  block_size: [4, 4]
+  delta0: 48
+  contourlet_scales: 1
+  lp_filter: pkva
+  dfb_filter: pkva
+
+author_host_files:
+  Lena:
+    filename: 4.2.04.tiff
+    sha256: c056da23302d2fb0d946e7ffa11e0d94618224193ff6e2f78ef8097bb8a3569b
+  Mandrill:
+    filename: 4.2.03.tiff
+    sha256: 3f590b52279fb59b81906f1e928ae713a5357b1afc1a2017a103adb563fb4494
+  Airplane:
+    filename: 4.2.05.tiff
+    sha256: ae9eba12b80df955e47585bf4a16332ea0dadc753668d3457c509564934dbd40
+  Fishingboat:
+    filename: boat.512.tiff
+    sha256: 6bc7319b1e3b44ce0b2a571ac39a28bac94437d812057d1afb2cf78ea3a9a35f
+  House:
+    filename: house.tiff
+    sha256: 82717baf56d3f48bc4e2767afc9f233e7f595ad150ca91932a4a8daa46b3300f
+  Bridge:
+    filename: 5.2.10.tiff
+    sha256: 044ed17593bc94a5c0fff638f2c4d068f563d415980e1f61b423c778bb61c181
+
+published_results:
+  average_psnr: 40.5020
+  jpeg_nc:
+    90: 0.9699
+    70: 0.9811
+    50: 0.9525
+    30: 0.8484
+    10: 0.8376
+  rotation_nc:
+    10: 0.9281
+    30: 0.8252
+    50: 0.8993
+    70: 0.8760
+    90: 0.8605
+  other_nc_32x32:
+    clean: 1.0000
+    aspect_y_2x: 0.8530
+    scale_half_restore: 0.9693
+    flip_left_right: 0.8357
+    salt_pepper_density_0.01: 0.9537
+    gaussian_noise_mean_0_variance_0.005: 0.9442
+    affine_shear_0.5: 0.9555
+    gaussian_filter_3x3: 0.9842
+    average_filter_3x3: 0.8171
+    wiener_filter_7x7: 0.8113
+
+not_published_but_numerically_material:
+  - exact 32x32 binary watermark pixels from Figure 7
+  - Arnold matrix parameters a, b, c, d and iteration count
+  - invariant-centroid circle radius and stopping/rounding rules
+  - normalized raster sampling scale, bounds, interpolation, and pixel-centre convention
+  - exact MATLAB contourlet toolbox revision
+  - pre-distortion interpolation and clipping/rounding order
+  - JPEG encoder settings and chroma-subsampling policy
+  - interpolation, canvas, clipping, and rounding settings for geometric attacks
+  - random seeds and boundary modes for noise and filtering attacks
+
+surrogate_psnr_calibration:
+  warning: This reproduces only the reported aggregate PSNR for deterministic random bits; it is not an author-experiment reproduction.
+  coefficient_scale: 4.73
+  centroid_radius: 512.0
+  compensation_iterations: 3
+  watermark: NumPy default_rng seed 42, 1024 equiprobable bits
+  observed_average_psnr: 40.502849

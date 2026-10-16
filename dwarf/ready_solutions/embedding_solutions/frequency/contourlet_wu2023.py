@@ -8,9 +8,12 @@ https://doi.org/10.1109/ACCESS.2023.3319669.
 
 Only the low-pass branch of the one-scale contourlet decomposition is
 material to this scheme.  Directional subbands are left unchanged, so they
-do not have to be constructed explicitly during embedding.
+do not have to be constructed explicitly during embedding.  Parameters that
+the paper treats as secret or does not report are exposed explicitly so a
+numerical reproduction never depends on hidden calibration constants.
 """
 
+import math
 import operator
 
 import numpy as np
@@ -97,11 +100,6 @@ _SYNTHESIS_TAPS = np.array(
     dtype=np.float64,
 )
 _SWAP_XY = np.array([[0.0, 1.0], [1.0, 0.0]], dtype=np.float64)
-# The paper fixes Delta_0=48 but does not state the coefficient-unit
-# convention around its MATLAB contourlet implementation.  This paired
-# analysis/synthesis scale leaves perfect reconstruction unchanged and is the
-# reproducibility profile's explicit calibration to the reported ~40 dB PSNR.
-_LOWPASS_GAIN = 5.0
 
 
 def _validate_image(value: np.ndarray) -> np.ndarray:
@@ -160,18 +158,18 @@ def _to_luma(image: np.ndarray) -> np.ndarray:
     return 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
 
 
-def _lowpass_analysis(image: np.ndarray) -> np.ndarray:
+def _lowpass_analysis(image: np.ndarray, coefficient_scale: float = 1.0) -> np.ndarray:
     """One-scale separable pyramid analysis used by the low-pass contourlet branch."""
     filtered = convolve1d(np.asarray(image, dtype=np.float64), _ANALYSIS_TAPS, axis=0, mode="wrap")
     filtered = convolve1d(filtered, _ANALYSIS_TAPS, axis=1, mode="wrap")
-    return np.ascontiguousarray(filtered[::2, ::2] * _LOWPASS_GAIN)
+    return np.ascontiguousarray(filtered[::2, ::2] * coefficient_scale)
 
 
-def _lowpass_synthesis_delta(coarse_delta: np.ndarray) -> np.ndarray:
+def _lowpass_synthesis_delta(coarse_delta: np.ndarray, coefficient_scale: float = 1.0) -> np.ndarray:
     """Maps a low-pass coefficient change back while preserving all high-pass bands."""
     coarse_delta = np.asarray(coarse_delta, dtype=np.float64)
     expanded = np.zeros((2 * coarse_delta.shape[0], 2 * coarse_delta.shape[1]), dtype=np.float64)
-    expanded[::2, ::2] = coarse_delta / _LOWPASS_GAIN
+    expanded[::2, ::2] = coarse_delta / coefficient_scale
     expanded = convolve1d(expanded, _SYNTHESIS_TAPS, axis=0, mode="wrap")
     return convolve1d(expanded, _SYNTHESIS_TAPS, axis=1, mode="wrap")
 
@@ -193,7 +191,13 @@ def _adaptive_steps(blocks: np.ndarray, delta0: float) -> np.ndarray:
     return np.log2((energy + 1000.0) / 1000.0) * delta0
 
 
-def _embed_lowpass(lowpass: np.ndarray, bits: np.ndarray, delta0: float, block_size: int) -> np.ndarray:
+def _embed_lowpass(
+    lowpass: np.ndarray,
+    bits: np.ndarray,
+    delta0: float,
+    block_size: int,
+    max_iterations: int = 6,
+) -> np.ndarray:
     result = np.array(lowpass, dtype=np.float64, copy=True)
     carriers = _blocks(result, block_size)
     flat = np.ascontiguousarray(carriers).reshape(-1, block_size, block_size)
@@ -201,11 +205,10 @@ def _embed_lowpass(lowpass: np.ndarray, bits: np.ndarray, delta0: float, block_s
         raise ValueError(f"Not enough payload capacity: need {bits.size} bits, available {flat.shape[0]}")
 
     selected = flat[: bits.size]
-    # Delta is content-adaptive and extraction recomputes it from the marked
-    # block.  Re-evaluating the published rule reaches the same fixed point
-    # that the decoder observes and avoids parity changes caused solely by the
-    # energy modification of S(1,1).
-    for iteration in range(6):
+    # Extraction recomputes Delta from the marked block.  Iterate equations
+    # (7)-(9) to make that content-adaptive step self-consistent; otherwise a
+    # bit can change solely because embedding changed its block energy.
+    for iteration in range(max_iterations):
         steps = _adaptive_steps(selected, delta0)
         u, singular, vh = np.linalg.svd(selected, full_matrices=False)
         rounded = np.floor(singular[:, 0] / steps + 0.5)
@@ -235,7 +238,12 @@ def _extract_lowpass(lowpass: np.ndarray, num_bits: int, delta0: float, block_si
     return np.ascontiguousarray((1 - quantized % 2).astype(np.int8))
 
 
-def _arnold(bits: np.ndarray, iterations: int, inverse: bool = False) -> np.ndarray:
+def _arnold(
+    bits: np.ndarray,
+    iterations: int,
+    inverse: bool = False,
+    matrix: tuple[int, int, int, int] = (1, 1, 1, 2),
+) -> np.ndarray:
     if iterations == 0:
         return np.ascontiguousarray(bits)
     side = int(round(bits.size**0.5))
@@ -244,12 +252,20 @@ def _arnold(bits: np.ndarray, iterations: int, inverse: bool = False) -> np.ndar
 
     source = np.asarray(bits).reshape(side, side)
     yy, xx = np.indices((side, side))
+    a, b, c, d = matrix
+    determinant = a * d - b * c
+    if math.gcd(determinant, side) != 1:
+        raise ValueError("Arnold matrix determinant must be invertible modulo the watermark side")
     if inverse:
-        target_x = (2 * xx - yy) % side
-        target_y = (-xx + yy) % side
-    else:
-        target_x = (xx + yy) % side
-        target_y = (xx + 2 * yy) % side
+        determinant_inverse = pow(determinant, -1, side)
+        a, b, c, d = (
+            determinant_inverse * d,
+            -determinant_inverse * b,
+            -determinant_inverse * c,
+            determinant_inverse * a,
+        )
+    target_x = (a * xx + b * yy) % side
+    target_y = (c * xx + d * yy) % side
 
     result = source
     for _ in range(iterations):
@@ -259,8 +275,12 @@ def _arnold(bits: np.ndarray, iterations: int, inverse: bool = False) -> np.ndar
     return np.ascontiguousarray(result.reshape(-1))
 
 
+def _weighted_moment(weights: np.ndarray, x: np.ndarray, y: np.ndarray, p: int, q: int) -> float:
+    return float(np.sum(weights * x**p * y**q) / np.sum(weights))
+
+
 def _moment_transform(image: np.ndarray, target_std: float, output_shape: tuple[int, int]) -> np.ndarray:
-    """Build an affine canonical frame from second-, third-, and fifth-order moments."""
+    """Build the four-stage affine normalization from equations (1)-(4)."""
     weights = np.clip(np.asarray(image, dtype=np.float64), 0.0, None)
     yy, xx = np.indices(weights.shape, dtype=np.float64)
     mass = weights.sum()
@@ -270,44 +290,45 @@ def _moment_transform(image: np.ndarray, target_std: float, output_shape: tuple[
     centroid = np.array([(weights * xx).sum() / mass, (weights * yy).sum() / mass])
     dx = xx - centroid[0]
     dy = yy - centroid[1]
-    covariance = (
-        np.array(
-            [
-                [(weights * dx * dx).sum(), (weights * dx * dy).sum()],
-                [(weights * dx * dy).sum(), (weights * dy * dy).sum()],
-            ]
-        )
-        / mass
-    )
-    eigenvalues, eigenvectors = np.linalg.eigh(covariance)
-    if eigenvalues[0] <= 1e-9:
+    mu02 = _weighted_moment(weights, dx, dy, 0, 2)
+    if mu02 <= 1e-12:
         raise ValueError("image moments are degenerate and cannot define an affine normalization")
-    order = np.argsort(eigenvalues)[::-1]
-    whitening = np.diag(1.0 / np.sqrt(eigenvalues[order])) @ eigenvectors[:, order].T
 
-    whitened_x = whitening[0, 0] * dx + whitening[0, 1] * dy
-    whitened_y = whitening[1, 0] * dx + whitening[1, 1] * dy
-    radius_squared = whitened_x * whitened_x + whitened_y * whitened_y
-    direction = (
-        np.array(
-            [
-                (weights * whitened_x * radius_squared).sum(),
-                (weights * whitened_y * radius_squared).sum(),
-            ]
-        )
-        / mass
+    # (2) x-shear, beta=-mu11/mu02.
+    beta = -_weighted_moment(weights, dx, dy, 1, 1) / mu02
+    shear = np.array([[1.0, beta], [0.0, 1.0]], dtype=np.float64)
+    sheared_x = dx + beta * dy
+    sheared_y = dy
+
+    # (3) independent scaling.  The signs make the two fifth-order moments
+    # positive exactly as required by the paper.
+    mu20_sheared = _weighted_moment(weights, sheared_x, sheared_y, 2, 0)
+    mu02_sheared = _weighted_moment(weights, sheared_x, sheared_y, 0, 2)
+    if min(mu20_sheared, mu02_sheared) <= 1e-12:
+        raise ValueError("image moments are degenerate and cannot define an affine normalization")
+    mu50_sheared = _weighted_moment(weights, sheared_x, sheared_y, 5, 0)
+    mu05_sheared = _weighted_moment(weights, sheared_x, sheared_y, 0, 5)
+    alpha = (1.0 if mu50_sheared >= 0.0 else -1.0) / np.sqrt(mu20_sheared)
+    delta = (1.0 if mu05_sheared >= 0.0 else -1.0) / np.sqrt(mu02_sheared)
+    scaling = np.diag([alpha, delta])
+    scaled = scaling @ shear
+    scaled_x = scaled[0, 0] * dx + scaled[0, 1] * dy
+    scaled_y = scaled[1, 0] * dx + scaled[1, 1] * dy
+
+    # (4) rotation, psi=-atan((mu30+mu12)/(mu21+mu03)).
+    numerator = _weighted_moment(weights, scaled_x, scaled_y, 3, 0) + _weighted_moment(
+        weights, scaled_x, scaled_y, 1, 2
     )
-    if np.linalg.norm(direction) > 1e-8:
-        angle = np.arctan2(direction[1], direction[0])
-        rotation = np.array([[np.cos(angle), np.sin(angle)], [-np.sin(angle), np.cos(angle)]])
-        oriented = rotation @ whitening
+    denominator = _weighted_moment(weights, scaled_x, scaled_y, 2, 1) + _weighted_moment(
+        weights, scaled_x, scaled_y, 0, 3
+    )
+    if abs(numerator) <= 1e-15 and abs(denominator) <= 1e-15:
+        angle = 0.0
     else:
-        oriented = whitening
-
-    oriented_y = oriented[1, 0] * dx + oriented[1, 1] * dy
-    fifth_moment = (weights * oriented_y**5).sum() / mass
-    if fifth_moment < 0.0:
-        oriented[1] *= -1.0
+        ratio = np.copysign(np.inf, numerator) if abs(denominator) <= 1e-15 else numerator / denominator
+        angle = -np.arctan(ratio)
+    rotation = np.array([[np.cos(angle), np.sin(angle)], [-np.sin(angle), np.cos(angle)]])
+    oriented = rotation @ scaled
 
     output_center = np.array([(output_shape[1] - 1.0) / 2.0, (output_shape[0] - 1.0) / 2.0])
     matrix = target_std * oriented
@@ -377,21 +398,8 @@ def _invariant_centroid(image: np.ndarray, radius: float, iterations: int = 20) 
     return float(centroid[0]), float(centroid[1])
 
 
-def _roi_origin(image: np.ndarray, roi_size: int) -> tuple[int, int]:
-    # The affine normalization places the full-image moment centroid at the
-    # canonical centre.  Using that invariant point directly is considerably
-    # more stable than rounding every intermediate point of the iterative
-    # construction; the latter is defined in continuous coordinates in the
-    # paper but becomes content-dependent on a discrete raster.
-    weights = np.clip(np.asarray(image, dtype=np.float64), 0.0, None)
-    yy, xx = np.indices(weights.shape, dtype=np.float64)
-    mass = weights.sum()
-    if mass <= np.finfo(np.float64).eps:
-        center_x = (image.shape[1] - 1.0) / 2.0
-        center_y = (image.shape[0] - 1.0) / 2.0
-    else:
-        center_x = float((weights * xx).sum() / mass)
-        center_y = float((weights * yy).sum() / mass)
+def _roi_origin(image: np.ndarray, roi_size: int, centroid_radius: float) -> tuple[int, int]:
+    center_x, center_y = _invariant_centroid(image, centroid_radius)
     top = int(round(center_y - (roi_size - 1.0) / 2.0))
     left = int(round(center_x - (roi_size - 1.0) / 2.0))
     top = min(max(top, 0), image.shape[0] - roi_size)
@@ -407,23 +415,20 @@ def _normalized_luma(
     image: np.ndarray,
     normalize: bool,
     target_std: float,
-    canonical_size: int,
+    canonical_shape: tuple[int, int],
 ) -> tuple[np.ndarray, np.ndarray]:
     luma = _to_luma(image)
     if not normalize:
         return luma.copy(), np.eye(3, dtype=np.float64)
-    output_shape = (canonical_size, canonical_size)
-    transform = _moment_transform(luma, target_std, output_shape)
-    return _warp_forward(luma, transform, output_shape), transform
+    transform = _moment_transform(luma, target_std, canonical_shape)
+    return _warp_forward(luma, transform, canonical_shape), transform
 
 
-def _profile_geometry(roi_size: int, block_size: int, canonical_size: int) -> None:
+def _profile_geometry(roi_size: int, block_size: int, canonical_shape: tuple[int, int]) -> None:
     if roi_size % (2 * block_size):
         raise ValueError("roi_size must be divisible by 2 * block_size")
-    if canonical_size < roi_size:
-        raise ValueError(f"roi_size={roi_size} does not fit canonical_size={canonical_size}")
-    if canonical_size % 2:
-        raise ValueError("canonical_size must be even")
+    if min(canonical_shape) < roi_size:
+        raise ValueError(f"roi_size={roi_size} does not fit canonical_shape={canonical_shape}")
 
 
 class Contourlet_Wu2023(Ready_Quantization_Based_Embeddings):
@@ -436,12 +441,21 @@ class Contourlet_Wu2023(Ready_Quantization_Based_Embeddings):
             "watermark_bits": None,
             "delta0": 48.0,
             "roi_size": 256,
+            "centroid_radius": 128.0,
             "block_size": 4,
+            "coefficient_scale": 1.0,
+            "quantization_iterations": 6,
             "arnold_iterations": 0,
+            "arnold_a": 1,
+            "arnold_b": 1,
+            "arnold_c": 1,
+            "arnold_d": 2,
             "normalize": True,
             "normalization_std": 256.0,
-            "canonical_size": 512,
-            "compensation_iterations": 7,
+            "canonical_size": None,
+            "canonical_height": 512,
+            "canonical_width": 512,
+            "compensation_iterations": 0,
         }
         # The pipeline supplies its complete runtime artifact mapping to every
         # solution.  Read only this implementation's declared parameters.
@@ -451,28 +465,57 @@ class Contourlet_Wu2023(Ready_Quantization_Based_Embeddings):
         bits = _validate_bits(args["watermark_bits"])
         delta0 = _positive_float("delta0", args["delta0"])
         roi_size = _integer("roi_size", args["roi_size"], 8)
+        centroid_radius = _positive_float("centroid_radius", args["centroid_radius"])
         block_size = _integer("block_size", args["block_size"], 1)
+        coefficient_scale = _positive_float("coefficient_scale", args["coefficient_scale"])
+        quantization_iterations = _integer("quantization_iterations", args["quantization_iterations"], 1)
         arnold_iterations = _integer("arnold_iterations", args["arnold_iterations"])
+        arnold_matrix = tuple(_integer(f"arnold_{name}", args[f"arnold_{name}"]) for name in "abcd")
         normalization_std = _positive_float("normalization_std", args["normalization_std"])
-        canonical_size = _integer("canonical_size", args["canonical_size"], roi_size)
+        if args["canonical_size"] is None:
+            canonical_shape = (
+                _integer("canonical_height", args["canonical_height"], roi_size),
+                _integer("canonical_width", args["canonical_width"], roi_size),
+            )
+        else:
+            canonical_size = _integer("canonical_size", args["canonical_size"], roi_size)
+            canonical_shape = (canonical_size, canonical_size)
         compensation_iterations = _integer("compensation_iterations", args["compensation_iterations"])
         normalize = _boolean("normalize", args["normalize"])
-        _profile_geometry(roi_size, block_size, canonical_size)
+        _profile_geometry(roi_size, block_size, canonical_shape)
 
-        payload = _arnold(bits, arnold_iterations)
-        normalized, transform = _normalized_luma(image, normalize, normalization_std, canonical_size)
-        top, left = _roi_origin(normalized, roi_size) if normalize else _centered_roi_origin(normalized, roi_size)
+        payload = _arnold(bits, arnold_iterations, matrix=arnold_matrix)
+        normalized, transform = _normalized_luma(image, normalize, normalization_std, canonical_shape)
+        top, left = (
+            _roi_origin(normalized, roi_size, centroid_radius)
+            if normalize
+            else _centered_roi_origin(normalized, roi_size)
+        )
         roi = normalized[top : top + roi_size, left : left + roi_size]
-        lowpass = _lowpass_analysis(roi)
-        modified_lowpass = _embed_lowpass(lowpass, payload, delta0, block_size)
+        lowpass = _lowpass_analysis(roi, coefficient_scale)
+        modified_lowpass = _embed_lowpass(
+            lowpass,
+            payload,
+            delta0,
+            block_size,
+            max_iterations=quantization_iterations,
+        )
         target = normalized.copy()
         target[top : top + roi_size, left : left + roi_size] = roi + _lowpass_synthesis_delta(
-            modified_lowpass - lowpass
+            modified_lowpass - lowpass,
+            coefficient_scale,
         )
 
-        result = image.astype(np.float64)
-        passes = compensation_iterations + 1 if normalize else 1
-        for _ in range(passes):
+        # The pre-distortion compensation cited by the paper inverse-normalizes
+        # both normalized images and adds their difference to the host once.
+        normalized_delta = target - normalized
+        correction = (
+            _warp_inverse_delta(normalized_delta, transform, image.shape[:2]) if normalize else normalized_delta
+        )
+        result = np.clip(image.astype(np.float64) + correction[..., None], 0.0, 255.0)
+
+        # Retained as an explicit non-paper extension for old experiment files.
+        for _ in range(compensation_iterations):
             current = np.floor(np.clip(result, 0.0, 255.0) + 0.5).astype(np.uint8)
             current_luma = _to_luma(current)
             current_normalized = _warp_forward(current_luma, transform, normalized.shape) if normalize else current_luma
@@ -490,11 +533,19 @@ class Contourlet_Wu2023(Ready_Quantization_Based_Embeddings):
             "num_bits": None,
             "delta0": 48.0,
             "roi_size": 256,
+            "centroid_radius": 128.0,
             "block_size": 4,
+            "coefficient_scale": 1.0,
             "arnold_iterations": 0,
+            "arnold_a": 1,
+            "arnold_b": 1,
+            "arnold_c": 1,
+            "arnold_d": 2,
             "normalize": True,
             "normalization_std": 256.0,
-            "canonical_size": 512,
+            "canonical_size": None,
+            "canonical_height": 512,
+            "canonical_width": 512,
         }
         args = {**defaults, **{name: args[name] for name in defaults.keys() & args.keys()}}
 
@@ -502,15 +553,34 @@ class Contourlet_Wu2023(Ready_Quantization_Based_Embeddings):
         num_bits = _integer("num_bits", args["num_bits"], 1)
         delta0 = _positive_float("delta0", args["delta0"])
         roi_size = _integer("roi_size", args["roi_size"], 8)
+        centroid_radius = _positive_float("centroid_radius", args["centroid_radius"])
         block_size = _integer("block_size", args["block_size"], 1)
+        coefficient_scale = _positive_float("coefficient_scale", args["coefficient_scale"])
         arnold_iterations = _integer("arnold_iterations", args["arnold_iterations"])
+        arnold_matrix = tuple(_integer(f"arnold_{name}", args[f"arnold_{name}"]) for name in "abcd")
         normalization_std = _positive_float("normalization_std", args["normalization_std"])
-        canonical_size = _integer("canonical_size", args["canonical_size"], roi_size)
+        if args["canonical_size"] is None:
+            canonical_shape = (
+                _integer("canonical_height", args["canonical_height"], roi_size),
+                _integer("canonical_width", args["canonical_width"], roi_size),
+            )
+        else:
+            canonical_size = _integer("canonical_size", args["canonical_size"], roi_size)
+            canonical_shape = (canonical_size, canonical_size)
         normalize = _boolean("normalize", args["normalize"])
-        _profile_geometry(roi_size, block_size, canonical_size)
+        _profile_geometry(roi_size, block_size, canonical_shape)
 
-        normalized, _ = _normalized_luma(image, normalize, normalization_std, canonical_size)
-        top, left = _roi_origin(normalized, roi_size) if normalize else _centered_roi_origin(normalized, roi_size)
+        normalized, _ = _normalized_luma(image, normalize, normalization_std, canonical_shape)
+        top, left = (
+            _roi_origin(normalized, roi_size, centroid_radius)
+            if normalize
+            else _centered_roi_origin(normalized, roi_size)
+        )
         roi = normalized[top : top + roi_size, left : left + roi_size]
-        extracted = _extract_lowpass(_lowpass_analysis(roi), num_bits, delta0, block_size)
-        return _arnold(extracted, arnold_iterations, inverse=True).astype(np.int8, copy=False)
+        extracted = _extract_lowpass(
+            _lowpass_analysis(roi, coefficient_scale),
+            num_bits,
+            delta0,
+            block_size,
+        )
+        return _arnold(extracted, arnold_iterations, inverse=True, matrix=arnold_matrix).astype(np.int8, copy=False)

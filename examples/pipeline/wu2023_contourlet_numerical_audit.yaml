@@ -1,0 +1,114 @@
+schema_version: 1
+
+experiment:
+  name: wu2023-contourlet-numerical-audit
+  description: Controlled numerical audit of Wu et al. (2023); see the reproduction manifest for limitations.
+  seed: 42
+  repeats: 1
+  max_cases: 100
+  tags: [frequency, contourlet, svd, qim, numerical-audit]
+
+plugins:
+  - dwarf.ready_solutions
+
+dataset:
+  type: directory
+  path: images/usc_sipi_wu2023
+  recursive: false
+  extensions: [.tif, .tiff]
+  include: []
+  exclude: []
+  limit: 6
+  shuffle: false
+  preprocessing:
+    color_mode: RGB
+    resize: [512, 512]
+    resample: nearest
+    exif_transpose: false
+
+watermark:
+  # Surrogate only: Figure 7 does not publish the 1024 source pixels.
+  type: random_bits
+  length: 1024
+  scope: fixed_for_run
+
+embeddings:
+  - id: wu2023-numerical-audit
+    name: Contourlet_Wu2023
+    embedding:
+      params:
+        fixed:
+          delta0: 48.0
+          roi_size: 256
+          centroid_radius: 512.0
+          block_size: 4
+          coefficient_scale: 4.73
+          quantization_iterations: 6
+          arnold_iterations: 5
+          arnold_a: 1
+          arnold_b: 1
+          arnold_c: 1
+          arnold_d: 2
+          normalize: true
+          normalization_std: 256.0
+          canonical_height: 512
+          canonical_width: 512
+          compensation_iterations: 3
+    extraction:
+      params:
+        fixed:
+          delta0: 48.0
+          roi_size: 256
+          centroid_radius: 512.0
+          block_size: 4
+          coefficient_scale: 4.73
+          arnold_iterations: 5
+          arnold_a: 1
+          arnold_b: 1
+          arnold_c: 1
+          arnold_d: 2
+          normalize: true
+          normalization_std: 256.0
+          canonical_height: 512
+          canonical_width: 512
+
+attack_scenarios:
+  - id: clean
+    steps: []
+
+metrics:
+  - id: embedding-psnr
+    name: PSNR
+    checkpoint: after_embedding
+    inputs:
+      original_image: original_image
+      distorted_image: embedded_image
+  - id: watermark-nc
+    name: NC
+    checkpoint: after_extraction
+    inputs:
+      original_bits: original_watermark
+      extracted_bits: extracted_watermark
+
+execution:
+  backend: process
+  workers: auto
+  max_in_flight: auto
+  start_method: auto
+  fail_fast: true
+  show_progress: true
+
+output:
+  directory: ../../runs_wu2023_contourlet_numerical_audit
+  database: sqlite
+  database_filename: results.sqlite3
+  save_images: none
+  exports: [csv]
+  overwrite: true
+
+report:
+  enabled: false
+  formats: [csv]
+  group_by: [embedding, attack_scenario, metric]
+  include_failures: true
+  float_precision: 6
