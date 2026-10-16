@@ -1,0 +1,160 @@
+schema_version: 1
+
+experiment:
+  name: wu2023-contourlet-paper-profile
+  description: Reproduction profile for Wu et al., IEEE Access 2023, DOI 10.1109/ACCESS.2023.3319669.
+  seed: 42
+  repeats: 1
+  max_cases: 1000
+  tags: [frequency, contourlet, svd, qim, paper-reproduction]
+
+plugins:
+  - dwarf.ready_solutions
+
+dataset:
+  type: directory
+  # Put the six 512x512 USC-SIPI grayscale hosts used in the paper here:
+  # Lena, Mandrill, Airplane, Fishingboat, House, and Bridge.
+  path: images/usc_sipi_wu2023
+  recursive: false
+  extensions: [.png, .tif, .tiff, .bmp]
+  include: []
+  exclude: []
+  limit: 6
+  shuffle: false
+  preprocessing:
+    color_mode: RGB
+    resize: [512, 512]
+    resample: lanczos
+    exif_transpose: true
+
+watermark:
+  # The paper does not publish the 1024 source bits or Arnold key.  A fixed
+  # generated payload makes runs reproducible while preserving the bit count.
+  type: random_bits
+  length: 1024
+  scope: fixed_for_run
+
+embeddings:
+  - id: wu2023
+    name: Contourlet_Wu2023
+    embedding:
+      params:
+        fixed:
+          delta0: 48.0
+          roi_size: 256
+          block_size: 4
+          arnold_iterations: 5
+          normalize: true
+          normalization_std: 256.0
+          canonical_size: 512
+          compensation_iterations: 7
+    extraction:
+      params:
+        fixed:
+          delta0: 48.0
+          roi_size: 256
+          block_size: 4
+          arnold_iterations: 5
+          normalize: true
+          normalization_std: 256.0
+          canonical_size: 512
+
+attack_scenarios:
+  - id: clean
+    description: No attack; Table V reports NC=1.0000.
+    steps: []
+
+  - id: jpeg
+    description: JPEG qualities from Table III.
+    steps:
+      - name: Jpeg
+        params:
+          grid:
+            quality: [90, 70, 50, 30, 10]
+
+  - id: salt-pepper-001
+    description: Salt-and-pepper noise with density 0.01 from Table V.
+    steps:
+      - name: Salt_and_Pepper
+        params:
+          fixed:
+            density: 0.01
+
+  - id: gaussian-noise-0005
+    description: Zero-mean Gaussian noise with variance 0.005 from Table V.
+    steps:
+      - name: AWGN
+        params:
+          fixed:
+            sigma: 0.0707106781
+
+  - id: gaussian-filter-3x3
+    description: Approximation of the paper's 3x3 Gaussian filter.
+    steps:
+      - name: Gaussian_Blur
+        params:
+          fixed:
+            sigma: 0.85
+
+  - id: average-filter-3x3
+    description: The 3x3 average filter from Table V.
+    steps:
+      - name: Box_Filter
+        params:
+          fixed:
+            window: 3
+
+  - id: wiener-filter-7x7
+    description: The 7x7 Wiener filter from Table V.
+    steps:
+      - name: Wiener_Filter
+        params:
+          fixed:
+            window: 7
+            noise: 0.0
+
+metrics:
+  - id: embedding-psnr
+    name: PSNR
+    checkpoint: after_embedding
+    inputs:
+      original_image: original_image
+      distorted_image: embedded_image
+
+  - id: watermark-nc
+    name: NC
+    checkpoint: after_extraction
+    inputs:
+      original_bits: original_watermark
+      extracted_bits: extracted_watermark
+
+  - id: watermark-ber
+    name: BER
+    checkpoint: after_extraction
+    inputs:
+      original_bits: original_watermark
+      extracted_bits: extracted_watermark
+
+execution:
+  backend: process
+  workers: auto
+  max_in_flight: auto
+  start_method: auto
+  fail_fast: false
+  show_progress: true
+
+output:
+  directory: ../../runs_wu2023_contourlet
+  database: sqlite
+  database_filename: results.sqlite3
+  save_images: none
+  exports: [csv]
+  overwrite: true
+
+report:
+  enabled: false
+  formats: [csv]
+  group_by: [embedding, attack_scenario, metric]
+  include_failures: true
+  float_precision: 6

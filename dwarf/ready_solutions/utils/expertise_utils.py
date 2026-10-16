@@ -430,7 +430,7 @@ def align_bits(original_bits: str, extracted_bits: str, allow_length_mismatch: b
     return original_bits[:length], extracted_bits[:length], length
 
 
-def bits_to_array(bits: str) -> np.ndarray:
+def bits_to_array(bits) -> np.ndarray:
     """
     Переводит битовую строку в массив нулей и единиц.
 
@@ -439,7 +439,8 @@ def bits_to_array(bits: str) -> np.ndarray:
     посчитанная на таком сравнении, молча теряет число ошибок.
 
     Args:
-        bits (str): строка из символов '0' и '1'
+        bits (str | array-like): строка из символов '0' и '1' либо одномерная
+            бинарная последовательность, как её передаёт pipeline
 
     Returns:
         np.ndarray: массив длины len(bits) типа uint8 со значениями 0 и 1
@@ -447,12 +448,22 @@ def bits_to_array(bits: str) -> np.ndarray:
     Raises:
         ValueError: если строка содержит символы, отличные от '0' и '1'
     """
-    codes = np.frombuffer(bits.encode("ascii"), dtype=np.uint8)
-    allowed = (codes == ord("0")) | (codes == ord("1"))
-    if not allowed.all():
-        position = int(np.argmin(allowed))
-        raise ValueError(f"bit string must contain only '0' and '1', got {bits[position]!r} at position {position}")
-    return (codes == ord("1")).astype(np.uint8)
+    if isinstance(bits, str):
+        codes = np.frombuffer(bits.encode("ascii"), dtype=np.uint8)
+        allowed = (codes == ord("0")) | (codes == ord("1"))
+        if not allowed.all():
+            position = int(np.argmin(allowed))
+            raise ValueError(
+                f"bit string must contain only '0' and '1', got {bits[position]!r} at position {position}"
+            )
+        return (codes == ord("1")).astype(np.uint8)
+
+    array = np.asarray(bits)
+    if array.ndim != 1:
+        raise ValueError(f"bit sequence must be one-dimensional, got shape {array.shape}")
+    if array.dtype.kind not in "biu" or np.any((array != 0) & (array != 1)):
+        raise ValueError("bit sequence must contain only 0 and 1")
+    return np.ascontiguousarray(array, dtype=np.uint8)
 
 
 def bits_to_pm1(bits: str) -> np.ndarray:

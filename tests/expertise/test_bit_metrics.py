@@ -1,5 +1,6 @@
 """Exact and boundary tests for BER and NC."""
 
+import numpy as np
 import pytest
 
 from .helpers import BIT_METRICS, evaluate
@@ -32,29 +33,41 @@ def test_ber_counts_every_error(errors):
 
 
 @pytest.mark.parametrize("length", [8, 16, 64, 256])
-def test_full_inversion_reaches_ber_one_and_nc_minus_one(length):
+def test_full_inversion_reaches_ber_one_and_binary_nc_zero(length):
     original_bits = "10" * (length // 2)
     inverted = "".join("1" if bit == "0" else "0" for bit in original_bits)
 
     assert evaluate("BER", original_bits=original_bits, extracted_bits=inverted) == pytest.approx(1.0)
-    assert evaluate("NC", original_bits=original_bits, extracted_bits=inverted) == pytest.approx(-1.0)
+    assert evaluate("NC", original_bits=original_bits, extracted_bits=inverted) == pytest.approx(0.0)
 
 
 @pytest.mark.parametrize(
-    "original_bits, extracted_bits",
+    "original_bits, extracted_bits, expected",
     [
-        ("1010", "1010"),
-        ("1010", "1011"),
-        ("1010", "1001"),
-        ("1010", "0101"),
-        ("11001010", "10101100"),
+        ("1010", "1010", 1.0),
+        ("1010", "1011", 2.0 / (2.0 * 3.0) ** 0.5),
+        ("1010", "1001", 0.5),
+        ("1010", "0101", 0.0),
+        ("11001010", "10101100", 2.0 / (4.0 * 4.0) ** 0.5),
     ],
 )
-def test_nc_and_ber_are_consistent(original_bits, extracted_bits):
-    ber = evaluate("BER", original_bits=original_bits, extracted_bits=extracted_bits)
+def test_nc_matches_binary_watermark_formula(original_bits, extracted_bits, expected):
     nc = evaluate("NC", original_bits=original_bits, extracted_bits=extracted_bits)
 
-    assert nc == pytest.approx(1 - 2 * ber)
+    assert nc == pytest.approx(expected)
+
+
+def test_nc_of_two_all_zero_watermarks_is_defined_as_zero():
+    assert evaluate("NC", original_bits="0000", extracted_bits="0000") == 0.0
+
+
+@pytest.mark.parametrize("name", sorted(BIT_METRICS))
+def test_bit_metrics_accept_pipeline_binary_arrays(name):
+    original = np.array([1, 0, 1, 0], dtype=np.uint8)
+    extracted = np.array([1, 0, 0, 0], dtype=np.int8)
+
+    expected = 0.25 if name == "BER" else 1 / 2**0.5
+    assert evaluate(name, original_bits=original, extracted_bits=extracted) == pytest.approx(expected)
 
 
 @pytest.mark.parametrize("name", sorted(BIT_METRICS))
@@ -67,7 +80,7 @@ def test_length_mismatch_is_rejected_by_default(name):
     "name, expected",
     [
         ("BER", 0.25),
-        ("NC", 0.5),
+        ("NC", 1 / 2**0.5),
     ],
 )
 def test_explicit_length_mismatch_compares_common_prefix(name, expected):
