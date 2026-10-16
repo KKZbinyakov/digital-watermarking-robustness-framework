@@ -453,9 +453,7 @@ def bits_to_array(bits) -> np.ndarray:
         allowed = (codes == ord("0")) | (codes == ord("1"))
         if not allowed.all():
             position = int(np.argmin(allowed))
-            raise ValueError(
-                f"bit string must contain only '0' and '1', got {bits[position]!r} at position {position}"
-            )
+            raise ValueError(f"bit string must contain only '0' and '1', got {bits[position]!r} at position {position}")
         return (codes == ord("1")).astype(np.uint8)
 
     array = np.asarray(bits)

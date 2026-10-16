@@ -270,12 +270,15 @@ def _moment_transform(image: np.ndarray, target_std: float, output_shape: tuple[
     centroid = np.array([(weights * xx).sum() / mass, (weights * yy).sum() / mass])
     dx = xx - centroid[0]
     dy = yy - centroid[1]
-    covariance = np.array(
-        [
-            [(weights * dx * dx).sum(), (weights * dx * dy).sum()],
-            [(weights * dx * dy).sum(), (weights * dy * dy).sum()],
-        ]
-    ) / mass
+    covariance = (
+        np.array(
+            [
+                [(weights * dx * dx).sum(), (weights * dx * dy).sum()],
+                [(weights * dx * dy).sum(), (weights * dy * dy).sum()],
+            ]
+        )
+        / mass
+    )
     eigenvalues, eigenvectors = np.linalg.eigh(covariance)
     if eigenvalues[0] <= 1e-9:
         raise ValueError("image moments are degenerate and cannot define an affine normalization")
@@ -285,12 +288,15 @@ def _moment_transform(image: np.ndarray, target_std: float, output_shape: tuple[
     whitened_x = whitening[0, 0] * dx + whitening[0, 1] * dy
     whitened_y = whitening[1, 0] * dx + whitening[1, 1] * dy
     radius_squared = whitened_x * whitened_x + whitened_y * whitened_y
-    direction = np.array(
-        [
-            (weights * whitened_x * radius_squared).sum(),
-            (weights * whitened_y * radius_squared).sum(),
-        ]
-    ) / mass
+    direction = (
+        np.array(
+            [
+                (weights * whitened_x * radius_squared).sum(),
+                (weights * whitened_y * radius_squared).sum(),
+            ]
+        )
+        / mass
+    )
     if np.linalg.norm(direction) > 1e-8:
         angle = np.arctan2(direction[1], direction[0])
         rotation = np.array([[np.cos(angle), np.sin(angle)], [-np.sin(angle), np.cos(angle)]])
@@ -469,9 +475,7 @@ class Contourlet_Wu2023(Ready_Quantization_Based_Embeddings):
         for _ in range(passes):
             current = np.floor(np.clip(result, 0.0, 255.0) + 0.5).astype(np.uint8)
             current_luma = _to_luma(current)
-            current_normalized = (
-                _warp_forward(current_luma, transform, normalized.shape) if normalize else current_luma
-            )
+            current_normalized = _warp_forward(current_luma, transform, normalized.shape) if normalize else current_luma
             residual = target - current_normalized
             correction = _warp_inverse_delta(residual, transform, image.shape[:2]) if normalize else residual
             result += correction[..., None]
