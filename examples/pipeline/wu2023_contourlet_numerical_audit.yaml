@@ -42,7 +42,7 @@ embeddings:
           roi_size: 256
           centroid_radius: 512.0
           block_size: 4
-          coefficient_scale: 4.73
+          coefficient_scale: 4.710
           quantization_iterations: 6
           arnold_iterations: 5
           arnold_a: 1
@@ -51,6 +51,8 @@ embeddings:
           arnold_d: 2
           normalize: true
           normalization_std: 256.0
+          normalization_bounds: full
+          normalization_sign_mode: positive
           canonical_height: 512
           canonical_width: 512
           compensation_iterations: 3
@@ -61,7 +63,7 @@ embeddings:
           roi_size: 256
           centroid_radius: 512.0
           block_size: 4
-          coefficient_scale: 4.73
+          coefficient_scale: 4.710
           arnold_iterations: 5
           arnold_a: 1
           arnold_b: 1
@@ -69,6 +71,8 @@ embeddings:
           arnold_d: 2
           normalize: true
           normalization_std: 256.0
+          normalization_bounds: full
+          normalization_sign_mode: positive
           canonical_height: 512
           canonical_width: 512
 

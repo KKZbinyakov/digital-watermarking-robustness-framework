@@ -153,6 +153,13 @@ def _boolean(name: str, value: object) -> bool:
     return bool(value)
 
 
+def _choice(name: str, value: object, choices: tuple[str, ...]) -> str:
+    if not isinstance(value, str) or value not in choices:
+        allowed = ", ".join(repr(choice) for choice in choices)
+        raise ValueError(f"{name} must be one of {allowed}")
+    return value
+
+
 def _to_luma(image: np.ndarray) -> np.ndarray:
     rgb = image.astype(np.float64, copy=False)
     return 0.299 * rgb[..., 0] + 0.587 * rgb[..., 1] + 0.114 * rgb[..., 2]
@@ -279,7 +286,12 @@ def _weighted_moment(weights: np.ndarray, x: np.ndarray, y: np.ndarray, p: int, 
     return float(np.sum(weights * x**p * y**q) / np.sum(weights))
 
 
-def _moment_transform(image: np.ndarray, target_std: float, output_shape: tuple[int, int]) -> np.ndarray:
+def _moment_transform(
+    image: np.ndarray,
+    target_std: float,
+    output_shape: tuple[int, int],
+    sign_mode: str = "fifth_moment",
+) -> np.ndarray:
     """Build the four-stage affine normalization from equations (1)-(4)."""
     weights = np.clip(np.asarray(image, dtype=np.float64), 0.0, None)
     yy, xx = np.indices(weights.shape, dtype=np.float64)
@@ -300,16 +312,28 @@ def _moment_transform(image: np.ndarray, target_std: float, output_shape: tuple[
     sheared_x = dx + beta * dy
     sheared_y = dy
 
-    # (3) independent scaling.  The signs make the two fifth-order moments
-    # positive exactly as required by the paper.
+    # (3) independent scaling.  The literal paper branch chooses signs that
+    # make both fifth-order moments positive; the orientation-preserving
+    # branch keeps the positive square roots.
     mu20_sheared = _weighted_moment(weights, sheared_x, sheared_y, 2, 0)
     mu02_sheared = _weighted_moment(weights, sheared_x, sheared_y, 0, 2)
     if min(mu20_sheared, mu02_sheared) <= 1e-12:
         raise ValueError("image moments are degenerate and cannot define an affine normalization")
-    mu50_sheared = _weighted_moment(weights, sheared_x, sheared_y, 5, 0)
-    mu05_sheared = _weighted_moment(weights, sheared_x, sheared_y, 0, 5)
-    alpha = (1.0 if mu50_sheared >= 0.0 else -1.0) / np.sqrt(mu20_sheared)
-    delta = (1.0 if mu05_sheared >= 0.0 else -1.0) / np.sqrt(mu02_sheared)
+    if sign_mode == "fifth_moment":
+        mu50_sheared = _weighted_moment(weights, sheared_x, sheared_y, 5, 0)
+        mu05_sheared = _weighted_moment(weights, sheared_x, sheared_y, 0, 5)
+        alpha_sign = 1.0 if mu50_sheared >= 0.0 else -1.0
+        delta_sign = 1.0 if mu05_sheared >= 0.0 else -1.0
+    elif sign_mode == "positive":
+        # This is the orientation-preserving branch of equation (3).  It is
+        # useful for reproducing the paper's rotation table: independent
+        # fifth-moment signs can change their product under a rotation and
+        # turn the normalized raster into a mirror image.
+        alpha_sign = delta_sign = 1.0
+    else:
+        raise ValueError(f"unsupported normalization sign mode: {sign_mode!r}")
+    alpha = alpha_sign / np.sqrt(mu20_sheared)
+    delta = delta_sign / np.sqrt(mu02_sheared)
     scaling = np.diag([alpha, delta])
     scaled = scaling @ shear
     scaled_x = scaled[0, 0] * dx + scaled[0, 1] * dy
@@ -377,6 +401,39 @@ def _warp_inverse_delta(
     )
 
 
+def _full_bounds_transform(
+    image_shape: tuple[int, int],
+    source_to_normalized: np.ndarray,
+) -> tuple[np.ndarray, tuple[int, int]]:
+    """Translate an affine map to a full, unit-spaced output raster.
+
+    This mirrors the default bounds policy of MATLAB ``imtransform``: every
+    transformed input corner is retained and the output grid keeps the input
+    pixel spacing.  The returned transform maps directly into zero-based
+    array coordinates.
+    """
+    height, width = image_shape
+    corners = np.array(
+        [
+            [0.0, 0.0, 1.0],
+            [width - 1.0, 0.0, 1.0],
+            [0.0, height - 1.0, 1.0],
+            [width - 1.0, height - 1.0, 1.0],
+        ],
+        dtype=np.float64,
+    )
+    mapped = (source_to_normalized @ corners.T).T[:, :2]
+    lower = np.floor(mapped.min(axis=0))
+    upper = np.ceil(mapped.max(axis=0))
+    output_shape = (
+        max(1, int(upper[1] - lower[1] + 1.0)),
+        max(1, int(upper[0] - lower[0] + 1.0)),
+    )
+    adjusted = source_to_normalized.copy()
+    adjusted[:2, 2] -= lower
+    return adjusted, output_shape
+
+
 def _invariant_centroid(image: np.ndarray, radius: float, iterations: int = 20) -> tuple[float, float]:
     weights = np.clip(np.asarray(image, dtype=np.float64), 0.0, None)
     yy, xx = np.indices(weights.shape, dtype=np.float64)
@@ -416,12 +473,19 @@ def _normalized_luma(
     normalize: bool,
     target_std: float,
     canonical_shape: tuple[int, int],
+    bounds_mode: str = "fixed",
+    sign_mode: str = "fifth_moment",
 ) -> tuple[np.ndarray, np.ndarray]:
     luma = _to_luma(image)
     if not normalize:
         return luma.copy(), np.eye(3, dtype=np.float64)
-    transform = _moment_transform(luma, target_std, canonical_shape)
-    return _warp_forward(luma, transform, canonical_shape), transform
+    transform = _moment_transform(luma, target_std, canonical_shape, sign_mode=sign_mode)
+    output_shape = canonical_shape
+    if bounds_mode == "full":
+        transform, output_shape = _full_bounds_transform(luma.shape, transform)
+    elif bounds_mode != "fixed":
+        raise ValueError(f"unsupported normalization bounds mode: {bounds_mode!r}")
+    return _warp_forward(luma, transform, output_shape), transform
 
 
 def _profile_geometry(roi_size: int, block_size: int, canonical_shape: tuple[int, int]) -> None:
@@ -452,6 +516,8 @@ class Contourlet_Wu2023(Ready_Quantization_Based_Embeddings):
             "arnold_d": 2,
             "normalize": True,
             "normalization_std": 256.0,
+            "normalization_bounds": "fixed",
+            "normalization_sign_mode": "fifth_moment",
             "canonical_size": None,
             "canonical_height": 512,
             "canonical_width": 512,
@@ -472,6 +538,12 @@ class Contourlet_Wu2023(Ready_Quantization_Based_Embeddings):
         arnold_iterations = _integer("arnold_iterations", args["arnold_iterations"])
         arnold_matrix = tuple(_integer(f"arnold_{name}", args[f"arnold_{name}"]) for name in "abcd")
         normalization_std = _positive_float("normalization_std", args["normalization_std"])
+        normalization_bounds = _choice("normalization_bounds", args["normalization_bounds"], ("fixed", "full"))
+        normalization_sign_mode = _choice(
+            "normalization_sign_mode",
+            args["normalization_sign_mode"],
+            ("fifth_moment", "positive"),
+        )
         if args["canonical_size"] is None:
             canonical_shape = (
                 _integer("canonical_height", args["canonical_height"], roi_size),
@@ -485,7 +557,16 @@ class Contourlet_Wu2023(Ready_Quantization_Based_Embeddings):
         _profile_geometry(roi_size, block_size, canonical_shape)
 
         payload = _arnold(bits, arnold_iterations, matrix=arnold_matrix)
-        normalized, transform = _normalized_luma(image, normalize, normalization_std, canonical_shape)
+        normalized, transform = _normalized_luma(
+            image,
+            normalize,
+            normalization_std,
+            canonical_shape,
+            bounds_mode=normalization_bounds,
+            sign_mode=normalization_sign_mode,
+        )
+        if min(normalized.shape) < roi_size:
+            raise ValueError(f"roi_size={roi_size} does not fit normalized image shape={normalized.shape}")
         top, left = (
             _roi_origin(normalized, roi_size, centroid_radius)
             if normalize
@@ -543,6 +624,8 @@ class Contourlet_Wu2023(Ready_Quantization_Based_Embeddings):
             "arnold_d": 2,
             "normalize": True,
             "normalization_std": 256.0,
+            "normalization_bounds": "fixed",
+            "normalization_sign_mode": "fifth_moment",
             "canonical_size": None,
             "canonical_height": 512,
             "canonical_width": 512,
@@ -559,6 +642,12 @@ class Contourlet_Wu2023(Ready_Quantization_Based_Embeddings):
         arnold_iterations = _integer("arnold_iterations", args["arnold_iterations"])
         arnold_matrix = tuple(_integer(f"arnold_{name}", args[f"arnold_{name}"]) for name in "abcd")
         normalization_std = _positive_float("normalization_std", args["normalization_std"])
+        normalization_bounds = _choice("normalization_bounds", args["normalization_bounds"], ("fixed", "full"))
+        normalization_sign_mode = _choice(
+            "normalization_sign_mode",
+            args["normalization_sign_mode"],
+            ("fifth_moment", "positive"),
+        )
         if args["canonical_size"] is None:
             canonical_shape = (
                 _integer("canonical_height", args["canonical_height"], roi_size),
@@ -570,7 +659,16 @@ class Contourlet_Wu2023(Ready_Quantization_Based_Embeddings):
         normalize = _boolean("normalize", args["normalize"])
         _profile_geometry(roi_size, block_size, canonical_shape)
 
-        normalized, _ = _normalized_luma(image, normalize, normalization_std, canonical_shape)
+        normalized, _ = _normalized_luma(
+            image,
+            normalize,
+            normalization_std,
+            canonical_shape,
+            bounds_mode=normalization_bounds,
+            sign_mode=normalization_sign_mode,
+        )
+        if min(normalized.shape) < roi_size:
+            raise ValueError(f"roi_size={roi_size} does not fit normalized image shape={normalized.shape}")
         top, left = (
             _roi_origin(normalized, roi_size, centroid_radius)
             if normalize

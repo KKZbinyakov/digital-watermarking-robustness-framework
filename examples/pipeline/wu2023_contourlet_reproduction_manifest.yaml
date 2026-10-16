@@ -71,9 +71,12 @@ not_published_but_numerically_material:
   - random seeds and boundary modes for noise and filtering attacks
 
 surrogate_psnr_calibration:
-  warning: This reproduces only the reported aggregate PSNR for deterministic random bits; it is not an author-experiment reproduction.
-  coefficient_scale: 4.73
+  warning: This reproduces the reported aggregate PSNR and the rotation trend with deterministic random bits; the unpublished watermark and keys still prevent an exact author-experiment reproduction.
+  coefficient_scale: 4.710
   centroid_radius: 512.0
   compensation_iterations: 3
+  normalization_bounds: full
+  normalization_sign_mode: positive
+  sign_mode_note: The literal fifth-moment signs switch handedness near 65 degrees on Lena; the positive-root branch is the orientation-preserving implementation that matches the reported rotation behavior.
   watermark: NumPy default_rng seed 42, 1024 equiprobable bits
-  observed_average_psnr: 40.502849
+  observed_average_psnr: 40.497175
