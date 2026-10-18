@@ -1,5 +1,7 @@
-from libc.stdint cimport uint64_t
 cimport numpy as cnp
+
+
+cdef cnp.ndarray validate_ycbcr_image(object image)
 
 
 ctypedef double DBlock[8][8]
@@ -8,117 +10,73 @@ cdef void apply_dct_8x8(const double block_img[8][8], double block_dct[8][8]) no
 cdef void apply_idct_8x8(const double block_dct[8][8], double block_img[8][8]) noexcept nogil
 
 
+cdef void apply_haar_dwt(double[:, ::1] coeffs, double[:, ::1] scratch, int levels) noexcept nogil
+cdef void apply_haar_idwt(double[:, ::1] coeffs, double[:, ::1] scratch, int levels) noexcept nogil
+
+
+ctypedef double dwt_vector[32]
+
+ctypedef bint (*dwt_embed_core_callback)(const double[:, ::1] unit, const double[:, ::1] tangent,
+                               const double[:, ::1] stats, const cnp.intp_t[::1] permutation,
+                               const double[::1] eta, const cnp.uint8_t[::1] bits,
+                               int h, double[:, ::1] targets) noexcept nogil
+
+cdef cnp.ndarray dwt_validate_image(object image, bint embedding)
+cdef cnp.ndarray dwt_validate_bits(object watermark)
+cdef object dwt_key_material(object key)
+cdef void dwt_prepare_core(const double[:, ::1] coeffs, const cnp.intp_t[::1] permutation,
+                            const double[:, ::1] reference, double[:, ::1] unit,
+                            double[:, ::1] tangent, double[:, ::1] stats,
+                            cnp.uint8_t[::1] flags) noexcept nogil
+cdef object dwt_render(cnp.ndarray coefficients, const double[:, ::1] targets)
+cdef object dwt_calibrate(cnp.ndarray image, cnp.ndarray coefficients,
+                           const double[:, ::1] unit, const double[:, ::1] tangent,
+                           const double[:, ::1] stats, const cnp.intp_t[::1] permutation,
+                           const double[::1] eta, const cnp.uint8_t[::1] bits,
+                           double[:, ::1] targets, dwt_embed_core_callback embed_core)
+
 cdef object dwt_integer(object name, object value, object lower, object upper)
-cdef object dwt_parameters(object parameters, bint extraction=*)
-cdef object dwt_shape(object height, object width, int levels)
-cdef object dwt_rgb(object image)
-cdef object dwt_bits(object watermark)
-cdef void dwt_check_capacity(object shape, object num_bits, object config) except *
-cpdef object dwt_geometry(object image_shape, object levels=*, object geometry_mode=*)
-cpdef object dwt_capacity(object image_shape, object levels=*, object repetitions=*, object geometry_mode=*)
-cdef object dwt_image_region(object image, object config)
-cdef object dwt_luminance(object rgb)
-cdef object dwt_merge_region(object image, object luminance, object modified, object geometry)
-cdef object dwt_require_decoded_bits(object details)
-cdef object dwt_embed_coefficients_inplace(double[:, ::1] coeffs,
-    const unsigned char[::1] bits, int levels, int q, Py_ssize_t repetitions,
-    uint64_t key_seed, double span_epsilon)
-cdef object dwt_decode_coefficients(const double[:, ::1] coeffs, Py_ssize_t num_bits,
-    int levels, int q, Py_ssize_t repetitions, uint64_t key_seed,
-    double span_epsilon, bint coarsest_only)
-cdef void dwt_filters(double* h, double* g) noexcept nogil
-cdef object dwt_forward(const double[:, ::1] source, int levels)
-cdef object dwt_inverse(const double[:, ::1] source, int levels)
-cdef object dwt_positions(Py_ssize_t count, Py_ssize_t needed,
-                         uint64_t key_seed, int level,
-                         Py_ssize_t height, Py_ssize_t width)
-cdef object dwt_tie_bits(Py_ssize_t length, uint64_t key_seed)
-cdef void dwt_sort3(double* values, int* indices) noexcept nogil
-cdef double dwt_quantize(double a, double b, double c, int bit,
-                        int q) noexcept nogil
-cdef int dwt_decode(double a, double b, double c, int q) noexcept nogil
-cdef object dwt_embed_band(double[:, ::1] coeffs, Py_ssize_t half_h,
-                          Py_ssize_t half_w, const Py_ssize_t[::1] positions,
-                          const unsigned char[::1] bits, int q,
-                          double span_epsilon, int level)
-cdef void dwt_extract_band(const double[:, ::1] coeffs, Py_ssize_t half_h,
-                          Py_ssize_t half_w, const Py_ssize_t[::1] positions,
-                          Py_ssize_t num_bits, int q, double span_epsilon,
-                          long long[:, ::1] votes,
-                          long long[::1] erased) noexcept nogil
+cdef double dwt_quantize(double value, double delta, double dither, int bit) noexcept nogil
+cdef int dwt_prepare_vector(const double x[32], const double u[32],
+                             double unit[32], double tangent[32], double stats[4]) noexcept nogil
+cdef bint dwt_embed_vector(const double unit[32], const double tangent[32],
+                            const double stats[4], int bit, double delta,
+                            double dither, double output[32]) noexcept nogil
+cdef int dwt_decode_vector(const double x[32], const double u[32], double delta,
+                             double dither, int* erased, int* ambiguous,
+                             double* margin) noexcept nogil
+cdef void dwt_merge_bands(double[:, ::1] coeffs, const double[:, ::1] targets) noexcept nogil
+cdef void dwt_round_pixels(const double[:, ::1] source, double[:, ::1] output) noexcept nogil
+cdef void dwt_rounding_cost(const double[:, ::1] source,
+                             cnp.uint32_t[:, :, ::1] costs) noexcept nogil
+cdef long long dwt_rounding_sse(const double[:, ::1] coeffs,
+                                 const double[:, ::1] targets,
+                                 const cnp.uint32_t[:, :, ::1] costs,
+                                 bint* near_half) noexcept nogil
 
 
-cdef enum:
-    N_SVD = 4
-    NN_SVD = 16
-    MAX_SWEEPS = 30
-    MAX_POWER_ITER = 50
-
-cdef void svd_jacobi(double *A, double *V, double *sv, bint want_v) noexcept nogil
-cdef void top2(double *sv, int *idx1, double *s1, double *s2) noexcept nogil
-cdef double qim_embed(double sigma, int bit, double delta) noexcept nogil
-cdef int qim_extract(double sigma, double delta) noexcept nogil
-cdef void power_iteration(double *A, double *u, double *v, double *sigma) noexcept nogil
-cdef double power_iteration_sigma(double *A) noexcept nogil
-cdef void embed_block(double[:, ::1] img, int by, int bx, int bit, double delta) noexcept nogil
-cdef int extract_block(double[:, ::1] img, int by, int bx, double delta) noexcept nogil
-
-
-cpdef object contourlet_qim_profile(object levels=*, object delta=*, object channel=*, object key=*, object repetitions=*)
-cpdef object contourlet_qim_checked_profile(object profile)
-cpdef object contourlet_qim_options(object kwargs, object defaults, object payload_name)
-
-cpdef object contourlet_qim_integer(object value, object name, object minimum=*, object maximum=*)
-cpdef object contourlet_qim_positive_step(object value)
-cpdef object contourlet_qim_real_array(object value, object name)
-cpdef object contourlet_qim_binary_array(object value)
-cpdef object contourlet_qim_checked_dither(object dither, object delta, object shape)
-cpdef object contourlet_qim_nearest_quantize(object value, object delta)
-cpdef object contourlet_qim_embed_coefficients(object coefficients, object bits, object delta, object dither=*)
-cpdef object contourlet_qim_extract_blocks(object coefficients, object delta, object repetitions=*, object dither=*)
-cpdef object contourlet_qim_periodic_filter(object image, object taps)
-cpdef object contourlet_qim_lowpass_analysis(object image)
-cpdef object contourlet_qim_lowpass_synthesis(object coarse)
-cpdef object contourlet_qim_analyse(object image, object levels)
-cpdef object contourlet_qim_synthesise_delta(object coarse_delta, object levels)
-cpdef object contourlet_qim_carrier_layout(object total, object count, object key, object delta)
-cpdef object contourlet_qim_embed_plane_float(object image, object watermark_bits, object profile=*)
-cpdef object contourlet_qim_extract_plane_float(object image, object num_bits, object profile=*)
-cpdef object contourlet_qim_image_region(object image, object profile)
-cpdef object contourlet_qim_capacity(object image, object profile=*)
-cpdef object contourlet_qim_round_uint8(object value)
-cpdef object contourlet_qim_embed_image(object image, object watermark_bits, object profile=*)
-cpdef object contourlet_qim_extract_image(object image, object num_bits, object profile=*)
-
-
-cpdef cnp.ndarray dft_validate_rgb_uint8(object image)
-cpdef cnp.ndarray dft_validate_bits(object bits)
-cpdef cnp.ndarray dft_rgb_to_y(object rgb)
-cpdef cnp.ndarray dft_apply_luma_delta(object rgb, object old_y, object new_y)
-cpdef int dft_binary_parity(int value)
-cpdef cnp.ndarray dft_convolutional_encode(object bits)
-cpdef cnp.ndarray dft_convolutional_decode_soft_batch(object values, int message_length)
-cpdef cnp.ndarray dft_ecc_encode(object bits, str mode)
-cpdef cnp.ndarray dft_ecc_decode_soft_batch(object values, int message_length, str mode)
-cpdef cnp.ndarray dft_coded_antipodal_from_messages(object messages, str ecc_mode)
-cpdef cnp.ndarray dft_interleaver_indices(int length, int seed)
-cpdef cnp.ndarray dft_interleave_coded_bits(object bits, int seed)
-cpdef cnp.ndarray dft_deinterleave_soft_matrix(object values, int seed)
-cpdef cnp.ndarray dft_manchester_encode(object bits)
-cpdef object dft_forward_lpm_geometry(int height, int width, int rho_samples, int theta_samples,
-                                      double omega_min, double omega_max)
-cpdef cnp.ndarray dft_forward_lpm(object magnitude, int rho_samples, int theta_samples,
-                                  double omega_min, double omega_max)
-cpdef cnp.ndarray dft_bilinear_periodic(object arr, object rho_f, object theta_f)
-cpdef cnp.ndarray dft_inverse_lpm_backward(object lpm, object out_shape,
-                                           double omega_min, double omega_max)
-cpdef object dft_centered_fft_with_optional_padding(object y, int pad_factor)
-cpdef cnp.ndarray dft_centered_magnitude_with_optional_padding(object y, int pad_factor)
-cpdef cnp.ndarray dft_crop_center(object arr, object shape)
-cpdef object dft_rt_invariant_from_image(object y, int rho_samples, int theta_samples,
-                                         double omega_min, double omega_max, int pad_factor)
-cpdef cnp.ndarray dft_rt_magnitude_from_image(object y, int rho_samples, int theta_samples,
-                                                double omega_min, double omega_max, int pad_factor)
-cpdef int dft_rho_index_for_omega(double omega, int rho_samples,
-                                  double omega_min, double omega_max)
-cpdef cnp.ndarray dft_scale_delta_to_psnr(object base_y, object delta, object target_psnr)
+cdef void contourlet_luma_core(const double[:, :, :] rgb, double[:, ::1] result) noexcept nogil
+cdef object contourlet_validate_image(object value)
+cdef object contourlet_validate_bits(object value)
+cdef double contourlet_positive_float(object name, object value)
+cdef object contourlet_integer(object name, object value, object minimum=*)
+cdef bint contourlet_boolean(object name, object value)
+cdef object contourlet_choice(object name, object value, object choices)
+cdef object contourlet_to_luma(object image)
+cdef object contourlet_lowpass_analysis(object image, object coefficient_scale=*)
+cdef object contourlet_lowpass_synthesis_delta(object coarse_delta, object coefficient_scale=*)
+cdef object contourlet_blocks(object image, object block_size)
+cdef object contourlet_adaptive_steps(object blocks, object delta0)
+cdef object contourlet_embed_core(object lowpass, object bits, object delta0, object block_size, object max_iterations=*)
+cdef object contourlet_extract_core(object lowpass, object num_bits, object delta0, object block_size)
+cdef object contourlet_arnold(object bits, object iterations, object inverse=*, object matrix=*)
+cdef double contourlet_weighted_moment(object weights, object x, object y, object p, object q)
+cdef object contourlet_moment_transform(object image, object target_std, object output_shape, object sign_mode=*)
+cdef object contourlet_warp_forward(object image, object source_to_normalized, object output_shape)
+cdef object contourlet_warp_inverse_delta(object normalized_delta, object source_to_normalized, object output_shape)
+cdef object contourlet_full_bounds_transform(object image_shape, object source_to_normalized)
+cdef object contourlet_invariant_centroid(object image, object radius, object iterations=*)
+cdef object contourlet_roi_origin(object image, object roi_size, object centroid_radius)
+cdef object contourlet_centered_roi_origin(object image, object roi_size)
+cdef object contourlet_normalized_luma(object image, object normalize, object target_std, object canonical_shape, object bounds_mode=*, object sign_mode=*)
+cdef object contourlet_profile_geometry(object roi_size, object block_size, object canonical_shape)
