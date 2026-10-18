@@ -11,26 +11,10 @@ from libc.math cimport fabs
 
 from dwarf.core.embedding_orchestrator.embedding_core import Ready_Frequency_Embeddings
 from dwarf.ready_solutions.utils.embedding_utils_pyx cimport (
-    DBlock, init_dct_matrix, apply_dct_8x8, apply_idct_8x8,
+    DBlock, validate_ycbcr_image, init_dct_matrix, apply_dct_8x8, apply_idct_8x8,
 )
 
 cnp.import_array()
-
-
-cdef cnp.ndarray _validate_ycbcr_image(object image):
-    """Проверяет структуру YCbCr-массива без преобразования его каналов."""
-    if image is None:
-        raise ValueError("input_image is required")
-    arr = np.asarray(image)
-    if arr.ndim != 3 or arr.shape[2] != 3:
-        raise ValueError(f"input_image must have shape (H, W, 3) in Y, Cb, Cr order, got {arr.shape}")
-    if arr.dtype != np.float64:
-        raise TypeError(f"input_image must be YCbCr with dtype float64, got {arr.dtype}")
-    if arr.shape[0] < 8 or arr.shape[1] < 8:
-        raise ValueError("input_image must contain at least one complete 8x8 block")
-    if not np.all(np.isfinite(arr)):
-        raise ValueError("input_image must contain only finite YCbCr values")
-    return np.ascontiguousarray(arr)
 
 
 cdef void _embed_core(double[:, :] image_y, Py_ssize_t blocks_w,
@@ -128,7 +112,7 @@ class DCT(Ready_Frequency_Embeddings):
             raise TypeError(f"Unknown Xiong DCT embedding parameters: {sorted(unknown)}")
         args = {**defaults, **args}
 
-        cdef cnp.ndarray ycbcr = _validate_ycbcr_image(args["input_image"])
+        cdef cnp.ndarray ycbcr = validate_ycbcr_image(args["input_image"])
         watermark = np.asarray(args["watermark_bits"])
         if watermark.ndim != 1:
             raise ValueError("watermark_bits must be a one-dimensional array")
@@ -163,7 +147,7 @@ class DCT(Ready_Frequency_Embeddings):
         if unknown:
             raise TypeError(f"Unknown Xiong DCT extraction parameters: {sorted(unknown)}")
         args = {**defaults, **args}
-        cdef cnp.ndarray ycbcr = _validate_ycbcr_image(args["input_image"])
+        cdef cnp.ndarray ycbcr = validate_ycbcr_image(args["input_image"])
         value = args["num_bits"]
         if isinstance(value, (bool, np.bool_)):
             raise TypeError("num_bits must be an integer, not bool")
