@@ -1,5 +1,9 @@
 import operator as dwt_operator
-from libc.math cimport cos, sqrt, fabs, floor, ceil, log10
+import hashlib
+import hmac
+from functools import lru_cache
+from libc.math cimport cos, sqrt, fabs, floor, ceil, log10, log, exp, ldexp, isfinite
+from libc.stdint cimport uint64_t
 from cpython.exc cimport PyErr_CheckSignals
 import numpy as np
 cimport numpy as cnp
@@ -408,7 +412,6 @@ cdef double dwt_quantize(double value, double delta, double dither, int bit) noe
     elif k > upper:
         k = upper
     result = k * delta + offset
-    # Границы выбираются среди слов решётки, а не обрезанием result до +/-1.
     if result < -1.0:
         result += delta
     elif result > 1.0:
@@ -1397,3 +1400,399 @@ cdef object contourlet_profile_geometry(object roi_size, object block_size, obje
         raise ValueError("roi_size must be divisible by 2 * block_size")
     if min(canonical_shape) < roi_size:
         raise ValueError(f"roi_size={roi_size} does not fit canonical_shape={canonical_shape}")
+
+
+cdef cnp.ndarray dft_validate_image(object image):
+    """
+    Проверяет одноканальный контейнер DFT 512x512 без скрытых преобразований.
+
+    Args:
+        image: массив uint8 формы (512, 512); допускаются strided и readonly.
+
+    Returns:
+        np.ndarray: непрерывный массив с исходными пикселями.
+    """
+    if image is None:
+        raise ValueError("input_image is required")
+    arr = np.asarray(image)
+    if arr.ndim != 2 or arr.shape != (512, 512):
+        raise ValueError("input_image must have shape (512, 512) in grayscale")
+    if arr.dtype != np.uint8:
+        raise TypeError("input_image must have dtype uint8")
+    return np.ascontiguousarray(arr)
+
+
+cdef cnp.ndarray dft_validate_bits(object watermark):
+    """
+    Проверяет ровно 64 неизвестных принимающей стороне бита.
+
+    Args:
+        watermark: одномерный массив uint8 со значениями 0 и 1.
+
+    Returns:
+        np.ndarray: непрерывный массив из 64 битов.
+    """
+    arr = np.asarray(watermark)
+    if arr.ndim != 1 or arr.size != 64:
+        raise ValueError("watermark_bits must be a one-dimensional array of exactly 64 bits")
+    if arr.dtype != np.uint8:
+        raise TypeError("watermark_bits must have dtype uint8")
+    if np.any((arr != 0) & (arr != 1)):
+        raise ValueError("watermark_bits must contain only 0 and 1")
+    return np.ascontiguousarray(arr)
+
+
+cdef bytes dft_validate_key(object key):
+    """
+    Проверяет ключ без неявного хеширования пользовательской строки.
+
+    Args:
+        key: ровно 32 bytes либо строка из 64 шестнадцатеричных цифр.
+
+    Returns:
+        bytes: 256-битный ключ протокола.
+    """
+    if isinstance(key, str):
+        if len(key) != 64 or any(ch not in "0123456789abcdefABCDEF" for ch in key):
+            raise ValueError("key must contain exactly 64 hexadecimal digits")
+        key = bytes.fromhex(key)
+    if not isinstance(key, bytes):
+        raise TypeError("key must be 32 bytes or a 64-digit hexadecimal string")
+    if len(key) != 32:
+        raise ValueError("key must contain exactly 32 bytes")
+    return key
+
+
+cdef double dft_validate_strength(object value):
+    """
+    Проверяет согласованную среднюю силу tau.
+
+    Args:
+        value: конечное число в диапазоне (0, 0.95].
+
+    Returns:
+        double: значение tau для декодера.
+    """
+    if value is None:
+        raise ValueError("strength from embedding metadata is required")
+    if isinstance(value, (bool, np.bool_)):
+        raise TypeError("strength must be a real number, not bool")
+    cdef double strength = float(value)
+    if not isfinite(strength) or not 0.0 < strength <= 0.95:
+        raise ValueError("strength must be finite and in (0, 0.95]")
+    return strength
+
+
+cdef object dft_layout():
+    """
+    Строит независимую полуоткрытую полосу DFT и 16 областей Вейбулла.
+
+    Returns:
+        tuple: знаковые координаты (v, u) intp формы (18960, 2)
+            в лексикографическом порядке и номера областей intp длины 18960.
+    """
+    cdef cnp.ndarray coordinates = np.empty((18960, 2), dtype=np.intp)
+    cdef cnp.ndarray zone_array = np.empty(18960, dtype=np.intp)
+    cdef cnp.intp_t[:, ::1] coords = coordinates
+    cdef cnp.intp_t[::1] zones = zone_array
+    cdef int v, u, distance, av, sector, index = 0
+    cdef double slope
+    for v in range(-158, 159):
+        if v == 0:
+            continue
+        av = -v if v < 0 else v
+        for u in range(1, 159):
+            distance = av + u
+            if distance < 80 or distance >= 160:
+                continue
+            slope = <double>av / u
+            if slope < 0.41421356237309503:
+                sector = 0
+            elif slope < 1.0:
+                sector = 1
+            elif slope < 2.414213562373095:
+                sector = 2
+            else:
+                sector = 3
+            coords[index, 0], coords[index, 1] = v, u
+            zones[index] = 8 * (v > 0) + 4 * (distance >= 120) + sector
+            index += 1
+    return coordinates, zone_array
+
+
+cdef object dft_word(object template, unsigned long long counter):
+    """Возвращает uint64 из первых восьми байтов очередного HMAC-блока."""
+    block = template.copy()
+    block.update(int(counter).to_bytes(8, "big"))
+    return int.from_bytes(block.digest()[:8], "big")
+
+
+cdef object dft_generate_key_material(bytes key):
+    """
+    Восстанавливает вещественную несущую и несмещённую перестановку по ключу.
+
+    Args:
+        key: проверенные 32 байта; глобальный RNG и кеш сообщения не используются.
+
+    Returns:
+        tuple: перестановка intp и несущая float64 длины 18960.
+    """
+    cdef cnp.ndarray permutation_array = np.arange(18960, dtype=np.intp)
+    cdef cnp.ndarray carrier_array = np.empty(18960, dtype=np.float64)
+    cdef cnp.intp_t[::1] permutation = permutation_array
+    cdef double[::1] carrier = carrier_array
+    cdef int j, size, selected
+    cdef cnp.intp_t temporary
+    cdef unsigned long long counter = 0
+    cdef uint64_t word, integer
+    cdef object span = 1 << 64
+    cdef object limit, candidate
+    template = hmac.new(key, b"barni-dft-v01/carrier\x00", hashlib.sha256)
+    for j in range(18960):
+        word = dft_word(template, j)
+        integer = word >> 12
+        carrier[j] = ldexp(<double>(2 * integer + 1), -52) - 1.0
+    template = hmac.new(key, b"barni-dft-v01/perm\x00", hashlib.sha256)
+    for j in range(18959, 0, -1):
+        size = j + 1
+        limit = (span // size) * size
+        while True:
+            candidate = dft_word(template, counter)
+            counter += 1
+            if candidate < limit:
+                break
+        selected = candidate % size
+        temporary = permutation[j]
+        permutation[j] = permutation[selected]
+        permutation[selected] = temporary
+    return permutation_array, carrier_array
+
+
+@lru_cache(maxsize=8)
+def dft_cached_key_material(bytes key):
+    """Кеширует только неизменные производные ключа; изображений и битов здесь нет."""
+    permutation, carrier = dft_generate_key_material(key)
+    permutation.setflags(write=False)
+    carrier.setflags(write=False)
+    return permutation, carrier
+
+
+cdef object dft_key_material(bytes key):
+    """Возвращает неизменные ключевые массивы для серии независимых атак."""
+    return dft_cached_key_material(key)
+
+
+cdef int dft_reflect(int index) noexcept nogil:
+    """Отражает координату окна [-4, 515] без повторения граничного пикселя."""
+    if index < 0:
+        return -index
+    if index > 511:
+        return 1022 - index
+    return index
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef bint dft_build_mask(const cnp.uint8_t[:, ::1] image, double[:, ::1] mask) noexcept nogil:
+    """
+    Строит дисперсионную маску 9x9 с отражением и нижним уровнем 0.50.
+
+    Args:
+        image: исходные пиксели uint8 формы (512, 512).
+        mask: выходной буфер float64 той же формы.
+
+    Returns:
+        bool: False для постоянного изображения, True при успехе.
+    """
+    cdef int y, x, dy, dx, row, col
+    cdef double mean, variance, difference, maximum = 0.0
+    for y in range(512):
+        for x in range(512):
+            mean = 0.0
+            for dy in range(-4, 5):
+                row = dft_reflect(y + dy)
+                for dx in range(-4, 5):
+                    mean += image[row, dft_reflect(x + dx)]
+            mean /= 81.0
+            variance = 0.0
+            for dy in range(-4, 5):
+                row = dft_reflect(y + dy)
+                for dx in range(-4, 5):
+                    col = dft_reflect(x + dx)
+                    difference = image[row, col] - mean
+                    variance += difference * difference
+            variance /= 81.0
+            mask[y, x] = variance
+            if variance > maximum:
+                maximum = variance
+    if maximum == 0.0:
+        return False
+    for y in range(512):
+        for x in range(512):
+            mask[y, x] = 0.25 + 0.75 * mask[y, x] / maximum
+            mask[y, x] = (mask[y, x] + 0.5) / 1.5
+    return True
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef double dft_shape_equation(const double[::1] logs, int start, int stop,
+                                double mean_log, double beta) noexcept nogil:
+    """Вычисляет уравнение формы Вейбулла на непрерывном диапазоне логарифмов."""
+    cdef int i
+    cdef double weight, total = 0.0, weighted_log = 0.0
+    for i in range(start, stop):
+        weight = exp(beta * logs[i])
+        total += weight
+        weighted_log += weight * logs[i]
+    return 1.0 / beta + mean_log - weighted_log / total
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef int dft_fit_core(const double[::1] magnitudes, const cnp.intp_t[::1] zones,
+                       double[::1] logs, double[:, ::1] parameters,
+                       double[::1] normalized) noexcept nogil:
+    """
+    Оценивает 16 ограниченных двухпараметрических распределений Вейбулла.
+
+    Args:
+        magnitudes: исходные модули 18960 независимых коэффициентов.
+        zones: номера зон в том же порядке.
+        logs: рабочий буфер 18960 логарифмов, сгруппированных стабильно по зонам.
+        parameters: выход (16, 2), столбцы alpha и beta.
+        normalized: выход (y/alpha)**beta; исходные нули остаются нулями.
+
+    Returns:
+        int: 0 при успехе, номер пустой зоны + 1 либо -1 при численной ошибке.
+    """
+    cdef int counts[16]
+    cdef int offsets[17]
+    cdef int cursors[16]
+    cdef double scales[16]
+    cdef double log_alpha[16]
+    cdef int i, r, start, stop, iteration
+    cdef double value, mean_log, lower, upper, middle, beta, total
+    for r in range(16):
+        counts[r] = 0
+        scales[r] = 0.0
+    for i in range(18960):
+        r = zones[i]
+        counts[r] += 1
+        if magnitudes[i] > scales[r]:
+            scales[r] = magnitudes[i]
+    offsets[0] = 0
+    for r in range(16):
+        if scales[r] == 0.0:
+            return r + 1
+        offsets[r + 1] = offsets[r] + counts[r]
+        cursors[r] = offsets[r]
+    for i in range(18960):
+        r = zones[i]
+        value = magnitudes[i] / scales[r]
+        if value < 1e-12:
+            value = 1e-12
+        logs[cursors[r]] = log(value)
+        cursors[r] += 1
+    for r in range(16):
+        start, stop = offsets[r], offsets[r + 1]
+        mean_log = 0.0
+        for i in range(start, stop):
+            mean_log += logs[i]
+        mean_log /= counts[r]
+        lower, upper = 0.2, 10.0
+        if dft_shape_equation(logs, start, stop, mean_log, lower) <= 0.0:
+            beta = lower
+        elif dft_shape_equation(logs, start, stop, mean_log, upper) >= 0.0:
+            beta = upper
+        else:
+            for iteration in range(80):
+                middle = (lower + upper) / 2.0
+                if dft_shape_equation(logs, start, stop, mean_log, middle) > 0.0:
+                    lower = middle
+                else:
+                    upper = middle
+            beta = (lower + upper) / 2.0
+        total = 0.0
+        for i in range(start, stop):
+            total += exp(beta * logs[i])
+        log_alpha[r] = log(scales[r]) + (log(total) - log(<double>counts[r])) / beta
+        parameters[r, 0] = exp(log_alpha[r])
+        parameters[r, 1] = beta
+        if not isfinite(parameters[r, 0]) or parameters[r, 0] <= 0.0 or not isfinite(beta):
+            return -1
+    for i in range(18960):
+        r = zones[i]
+        if magnitudes[i] == 0.0:
+            normalized[i] = 0.0
+        else:
+            normalized[i] = exp(parameters[r, 1] * (log(magnitudes[i]) - log_alpha[r]))
+        if not isfinite(normalized[i]):
+            return -1
+    return 0
+
+
+cdef object dft_fit_weibull(cnp.ndarray magnitudes, cnp.ndarray zones):
+    """
+    Выделяет буферы для слепого оценивания и переводит ошибки в исключения.
+
+    Args:
+        magnitudes: непрерывный float64-массив 18960 модулей.
+        zones: непрерывный intp-массив 18960 номеров областей.
+
+    Returns:
+        tuple: параметры (alpha, beta) формы (16, 2) и нормированные степени.
+    """
+    cdef cnp.ndarray logs_array = np.empty(18960, dtype=np.float64)
+    cdef cnp.ndarray parameters_array = np.empty((16, 2), dtype=np.float64)
+    cdef cnp.ndarray normalized_array = np.empty(18960, dtype=np.float64)
+    cdef const double[::1] source = magnitudes
+    cdef const cnp.intp_t[::1] labels = zones
+    cdef double[::1] logs = logs_array
+    cdef double[:, ::1] parameters = parameters_array
+    cdef double[::1] normalized = normalized_array
+    cdef int status
+    with nogil:
+        status = dft_fit_core(source, labels, logs, parameters, normalized)
+    if status > 0:
+        raise ValueError(f"DECODE_FAILURE: DFT region {status - 1} contains only zero magnitudes")
+    if status < 0:
+        raise ArithmeticError("NUMERIC_ERROR: nonfinite Weibull parameters or normalized magnitudes")
+    return parameters_array, normalized_array
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+cdef double dft_render_pixels(const cnp.uint8_t[:, ::1] image, const double[:, ::1] restored,
+                              const double[:, ::1] mask, cnp.uint8_t[:, ::1] result,
+                              int* clipped, double scale=1.0) noexcept nogil:
+    """
+    Смешивает возмущение с маской и округляет ограниченные пиксели половинами вверх.
+
+    Args:
+        image: исходный контейнер (512, 512), uint8.
+        restored: вещественная часть IFFT формы (512, 512).
+        mask: пространственная маска той же формы.
+        result: выходной буфер uint8.
+        clipped: выходное число отсчётов до округления вне [0, 255].
+        scale: множитель пространственного возмущения для калибровки PSNR.
+
+    Returns:
+        double: сумма квадратов ошибки сохранённого контейнера.
+    """
+    cdef int y, x
+    cdef double value, difference, sse = 0.0
+    clipped[0] = 0
+    for y in range(512):
+        for x in range(512):
+            value = image[y, x] + scale * mask[y, x] * (restored[y, x] - image[y, x])
+            if value < 0.0:
+                value = 0.0
+                clipped[0] += 1
+            elif value > 255.0:
+                value = 255.0
+                clipped[0] += 1
+            result[y, x] = <cnp.uint8_t>floor(value + 0.5)
+            difference = <double>result[y, x] - image[y, x]
+            sse += difference * difference
+    return sse

@@ -80,3 +80,15 @@ cdef object contourlet_roi_origin(object image, object roi_size, object centroid
 cdef object contourlet_centered_roi_origin(object image, object roi_size)
 cdef object contourlet_normalized_luma(object image, object normalize, object target_std, object canonical_shape, object bounds_mode=*, object sign_mode=*)
 cdef object contourlet_profile_geometry(object roi_size, object block_size, object canonical_shape)
+
+cdef cnp.ndarray dft_validate_image(object image)
+cdef cnp.ndarray dft_validate_bits(object watermark)
+cdef bytes dft_validate_key(object key)
+cdef double dft_validate_strength(object value)
+cdef object dft_layout()
+cdef object dft_key_material(bytes key)
+cdef bint dft_build_mask(const cnp.uint8_t[:, ::1] image, double[:, ::1] mask) noexcept nogil
+cdef object dft_fit_weibull(cnp.ndarray magnitudes, cnp.ndarray zones)
+cdef double dft_render_pixels(const cnp.uint8_t[:, ::1] image, const double[:, ::1] restored,
+                              const double[:, ::1] mask, cnp.uint8_t[:, ::1] result,
+                              int* clipped, double scale=*) noexcept nogil
