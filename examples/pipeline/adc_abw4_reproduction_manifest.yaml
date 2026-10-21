@@ -1,0 +1,53 @@
+paper:
+  title: "Spread Spectrum Watermark in DC: A View from the Embedding Processing"
+  doi: 10.1145/3743139
+  publication: ACM Transactions on Multimedia Computing, Communications, and Applications, 2025
+  implementation_environment: MATLAB R2021 on 64-bit Windows 7
+
+published_adc_abw4_profile:
+  image_domain: RGB converted to YCbCr; watermark embedded in Y
+  block_grid: [128, 128]
+  mode: many-to-one
+  spreading_length: 320
+  frequency_band: high
+  attack_angle_degrees: 30
+  watermark_length_bits: 64
+  average_psnr_db: 48.1
+
+published_test_set:
+  total_images: 100
+  university_of_washington:
+    count: 85
+    shape: rectangular images with different sizes
+  usc_sipi:
+    count: 15
+    shape: square images
+  selection: random
+  exact_filenames_published: false
+  identical_watermark_for_all_images: true
+  watermark_bits_published: false
+
+implementation_traceability:
+  adc_step_1: block DC coefficients form matrix D1
+  adc_step_2: orthonormal 2-D DCT of D1 forms D2
+  adc_steps_3_4: zigzag scan and the high-frequency tail form the location vector
+  many_to_one: "W' = W E^T; L' = L + alpha W'"
+  extraction: sign of each inner product with an orthogonal code
+  abw: "alpha = norm(L) / (tan(A) * norm(W'))"
+
+implementation_specific_choices_not_fixed_by_the_paper:
+  - NumPy PCG64 is used to generate Gaussian samples from the integer key.
+  - QR decomposition constructs deterministic orthogonal spreading codes.
+  - BT.601 full-range luma is evaluated in float64.
+  - Incomplete trailing strips of non-divisible images are left unchanged.
+  - Pillow JPEG replaces the MATLAB JPEG codec in the local surrogate test.
+
+reproduction_status:
+  algorithm_equations: covered by unit tests in tests/embeddings/test_adc_abw.py
+  local_surrogate: examples/pipeline/adc_abw4_jpeg_coco.yaml
+  exact_author_experiment: not reproducible from the publication alone
+  blockers:
+    - The 100 randomly selected UW/USC-SIPI filenames are not listed.
+    - The common 64-bit watermark sequence is not published.
+    - The Gaussian code matrix, random seed, and MATLAB generator state are not published.
+    - Complete codec and attack implementation settings are not published.

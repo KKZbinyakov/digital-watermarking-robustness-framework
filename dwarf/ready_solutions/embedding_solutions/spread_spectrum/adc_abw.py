@@ -165,6 +165,15 @@ def _location(dc_spectrum: np.ndarray, spreading_length: int) -> tuple:
     return dc_spectrum.reshape(-1)[indices], indices
 
 
+def _attack_based_weight(
+    location: np.ndarray,
+    spread_watermark: np.ndarray,
+    attack_angle: float,
+) -> float:
+    """Computes the many-to-one ABW from Guo et al., Equation (18)."""
+    return float(np.linalg.norm(location) / (np.tan(np.deg2rad(attack_angle)) * np.linalg.norm(spread_watermark)))
+
+
 def _decode_scores(
     image: np.ndarray,
     num_bits: int,
@@ -253,8 +262,7 @@ class ADC_ABW(Ready_Spread_Spectrum_Embeddings):
         spectrum_norm = np.linalg.norm(dc_spectrum)
         if location_norm <= 1e-12 * max(1.0, spectrum_norm):
             raise ValueError("selected ADC location has no energy; the image cannot carry this watermark")
-        watermark_norm = np.linalg.norm(spread_watermark)
-        weight = location_norm / (np.tan(np.deg2rad(attack_angle)) * watermark_norm)
+        weight = _attack_based_weight(location, spread_watermark, attack_angle)
         modified_spectrum = dc_spectrum.copy().reshape(-1)
         modified_spectrum[indices] = location + weight * spread_watermark
         modified_dc = idctn(modified_spectrum.reshape(dc_spectrum.shape), norm="ortho")

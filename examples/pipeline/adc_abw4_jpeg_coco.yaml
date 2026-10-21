@@ -2,7 +2,7 @@ schema_version: 1
 
 experiment:
   name: adc-abw4-jpeg-coco
-  description: ADC-ABW4 paper profile evaluation on COCO val2017 under JPEG compression.
+  description: Deterministic ADC-ABW4 surrogate evaluation on COCO val2017 under JPEG compression.
   seed: 42
   repeats: 3
   max_cases: 10000000
@@ -76,6 +76,13 @@ metrics:
     inputs:
       original_image: embedded_image
       distorted_image: attacked_image
+
+  - id: watermark-ber
+    name: BER
+    checkpoint: after_extraction
+    inputs:
+      original_bits: original_watermark
+      extracted_bits: extracted_watermark
 
 execution:
   backend: process
