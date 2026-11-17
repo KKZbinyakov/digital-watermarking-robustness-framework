@@ -7,3 +7,6 @@
 
 numpy>=1.24
 Pillow>=10.0
+pydantic>=2.7,<3
+PyYAML>=6.0.1,<7
+tzdata; sys_platform == 'win32'
