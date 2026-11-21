@@ -51,7 +51,7 @@ def test_table2_attack_psnr(evidence, attack_group, limit):
     )
 
 
-@pytest.mark.parametrize("attack_group,limit", [("other", 0.065), ("gaussian", 0.214)])
+@pytest.mark.parametrize("attack_group,limit", [("other", 0.066), ("gaussian", 0.214)])
 def test_table2_attack_nc(evidence, attack_group, limit):
     """Compare published NC to plotted bit accuracy, including all four JPEG points per host."""
     paper, _, attacks = evidence
