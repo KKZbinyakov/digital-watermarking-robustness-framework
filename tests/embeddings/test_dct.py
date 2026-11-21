@@ -24,31 +24,47 @@ def evidence(tmp_path_factory):
 def test_table1_channel_psnr(evidence):
     """All 12 RGB PSNR values."""
     paper, channels, _ = evidence
-    assert_max_delta(((f"{image}/{channel}", channels[image, channel]["measured_psnr_db"], reference)
-                      for image, values in paper["table1"].items()
-                      for channel, reference in values.items()), 1.0, "DCT Table 1 PSNR (dB)")
+    assert_max_delta(
+        (
+            (f"{image}/{channel}", channels[image, channel]["measured_psnr_db"], reference)
+            for image, values in paper["table1"].items()
+            for channel, reference in values.items()
+        ),
+        1.0,
+        "DCT Table 1 PSNR (dB)",
+    )
 
 
 @pytest.mark.parametrize("attack_group,limit", [("other", 1.78), ("gaussian", 18.4)])
 def test_table2_attack_psnr(evidence, attack_group, limit):
     """All Table 2 attack PSNR points."""
     paper, _, attacks = evidence
-    assert_max_delta(((f"{image}/{attack}", attacks[image, attack]["psnr_db_mean"], values["psnr_db"])
-                      for image, references in paper["table2"].items()
-                      for attack, values in references.items()
-                      if (attack == "gaussian") == (attack_group == "gaussian")),
-                     limit, f"DCT Table 2 {attack_group} PSNR (dB)")
+    assert_max_delta(
+        (
+            (f"{image}/{attack}", attacks[image, attack]["psnr_db_mean"], values["psnr_db"])
+            for image, references in paper["table2"].items()
+            for attack, values in references.items()
+            if (attack == "gaussian") == (attack_group == "gaussian")
+        ),
+        limit,
+        f"DCT Table 2 {attack_group} PSNR (dB)",
+    )
 
 
 @pytest.mark.parametrize("attack_group,limit", [("other", 0.065), ("gaussian", 0.214)])
 def test_table2_attack_nc(evidence, attack_group, limit):
     """Compare published NC to plotted bit accuracy, including all four JPEG points per host."""
     paper, _, attacks = evidence
-    assert_max_delta(((f"{image}/{attack}", attacks[image, attack]["accuracy_mean"], values["nc"])
-                      for image, references in paper["table2"].items()
-                      for attack, values in references.items()
-                      if (attack == "gaussian") == (attack_group == "gaussian")),
-                     limit, f"DCT Table 2 {attack_group} NC/accuracy")
+    assert_max_delta(
+        (
+            (f"{image}/{attack}", attacks[image, attack]["accuracy_mean"], values["nc"])
+            for image, references in paper["table2"].items()
+            for attack, values in references.items()
+            if (attack == "gaussian") == (attack_group == "gaussian")
+        ),
+        limit,
+        f"DCT Table 2 {attack_group} NC/accuracy",
+    )
 
 
 def test_reported_bit_accuracy_matches_ber(evidence):

@@ -25,18 +25,25 @@ def evidence(tmp_path_factory):
 def test_clean_psnr_45_db(evidence):
     """Every one of 192 runs targets the paper's 45 dB."""
     _, quality, _, _ = evidence
-    assert_max_delta(((f"{image}/trial={trial}", row["psnr_db"], 45.0)
-                      for (image, trial), row in quality.items()),
-                     0.001, "DFT clean PSNR (dB)")
+    assert_max_delta(
+        ((f"{image}/trial={trial}", row["psnr_db"], 45.0) for (image, trial), row in quality.items()),
+        0.001,
+        "DFT clean PSNR (dB)",
+    )
 
 
 @pytest.mark.parametrize("parameter,limit", [("alpha", 0.023), ("beta", 0.29)])
 def test_table1_weibull(evidence, parameter, limit):
     """All 16 article/run points for each Weibull parameter; alpha uses article scaling."""
     paper, _, weibull, _ = evidence
-    assert_max_delta(((f"region {region}", weibull[str(region),][f"measured_{parameter}"], reference)
-                      for region, reference in enumerate(paper["table1"][parameter], start=1)),
-                     limit, f"DFT Weibull {parameter}")
+    assert_max_delta(
+        (
+            (f"region {region}", weibull[str(region),][f"measured_{parameter}"], reference)
+            for region, reference in enumerate(paper["table1"][parameter], start=1)
+        ),
+        limit,
+        f"DFT Weibull {parameter}",
+    )
 
 
 def _paper_log_ber(bpp, xs, ys):
@@ -65,8 +72,9 @@ def test_figure3_compression_ber(evidence, codec, limit, count):
         ber = finite(row["ber"])
         assert 0 <= ber <= 1
         display_ber = max(ber, 1 / int(row["total_bits"]))
-        pairs.append((f"{codec}/quality={parameter}/bpp={bpp:.5f}",
-                      math.log10(display_ber), _paper_log_ber(bpp, xs, ys)))
+        pairs.append(
+            (f"{codec}/quality={parameter}/bpp={bpp:.5f}", math.log10(display_ber), _paper_log_ber(bpp, xs, ys))
+        )
     assert len(pairs) == count, f"Figure 3 {codec}: compared {len(pairs)} points, expected {count}"
     assert_max_delta(pairs, limit, f"DFT Figure 3 {codec} log10 BER")
 
@@ -74,5 +82,8 @@ def test_figure3_compression_ber(evidence, codec, limit, count):
 def test_median3_text_ber(evidence):
     """Paper text BER vs run."""
     paper, _, _, summary = evidence
-    assert_max_delta((("3x3 median", summary["ALL", "median", "3"]["ber"],
-                       paper["median3_text_ber"]),), 0.00052, "DFT median 3x3 BER")
+    assert_max_delta(
+        (("3x3 median", summary["ALL", "median", "3"]["ber"], paper["median3_text_ber"]),),
+        0.00052,
+        "DFT median 3x3 BER",
+    )

@@ -29,8 +29,13 @@ class Jpeg2000(Ready_Compression_Attacks):
             np.ndarray | tuple: матрица после атаки; при return_stats
                 также бит/пиксель и число байт потока
         """
-        defaults = {"input_image": None, "compression_ratio": 20,
-                    "grayscale": False, "return_stats": False, "irreversible": True}
+        defaults = {
+            "input_image": None,
+            "compression_ratio": 20,
+            "grayscale": False,
+            "return_stats": False,
+            "irreversible": True,
+        }
         args = {**defaults, **args}
         input_image = args["input_image"]
         compression_ratio = float(args["compression_ratio"])

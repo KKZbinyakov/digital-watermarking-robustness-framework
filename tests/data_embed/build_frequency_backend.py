@@ -25,11 +25,11 @@ def main():
     source_root.mkdir(parents=True, exist_ok=True)
 
     paths = {
-        "dwarf.ready_solutions.utils.embedding_utils_pyx":
-            Path("dwarf/ready_solutions/utils/embedding_utils_pyx.pyx"),
+        "dwarf.ready_solutions.utils.embedding_utils_pyx": Path("dwarf/ready_solutions/utils/embedding_utils_pyx.pyx"),
         **{
-            f"dwarf.ready_solutions.embedding_solutions.frequency.{name}":
-                Path(f"dwarf/ready_solutions/embedding_solutions/frequency/{name}.pyx")
+            f"dwarf.ready_solutions.embedding_solutions.frequency.{name}": Path(
+                f"dwarf/ready_solutions/embedding_solutions/frequency/{name}.pyx"
+            )
             for name in ("dct", "dwt", "dft")
         },
     }
@@ -62,8 +62,11 @@ def main():
             force=True,
         ),
         script_args=[
-            "build_ext", "--build-lib", str(output),
-            "--build-temp", "objects",
+            "build_ext",
+            "--build-lib",
+            str(output),
+            "--build-temp",
+            "objects",
         ],
     )
 

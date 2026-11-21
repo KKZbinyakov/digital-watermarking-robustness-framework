@@ -26,17 +26,15 @@ load_services = services.load_services
 
 
 HOSTS = {
-    "DCT": {"Airplane": "4.2.05.tiff", "Lena": "4.2.04.tiff",
-            "Peppers": "4.2.07.tiff", "Sailboat": "4.2.06.tiff"},
-    "DWT": {"Peppers": "4.2.07.tiff", "Baboon": "4.2.03.tiff",
-            "Barbara": "barbara.pgm", "Lena": "4.2.04.tiff"},
+    "DCT": {"Airplane": "4.2.05.tiff", "Lena": "4.2.04.tiff", "Peppers": "4.2.07.tiff", "Sailboat": "4.2.06.tiff"},
+    "DWT": {"Peppers": "4.2.07.tiff", "Baboon": "4.2.03.tiff", "Barbara": "barbara.pgm", "Lena": "4.2.04.tiff"},
     "DFT": {"Lena": "4.2.04.tiff", "Tiffany": "4.2.02.tiff", "Lake": "4.2.06.tiff"},
 }
 DCT_ATTACKS = {
     "clean": ("clean", {}),
-    "gaussian": ("AWGN", {"sigma": .01}),
-    "salt_pepper": ("Salt_and_Pepper", {"density": .01}),
-    "speckle": ("Speckle", {"variance": .01}),
+    "gaussian": ("AWGN", {"sigma": 0.01}),
+    "salt_pepper": ("Salt_and_Pepper", {"density": 0.01}),
+    "speckle": ("Speckle", {"variance": 0.01}),
     "median": ("Median_Filter", {"window": 3}),
     "wiener": ("Wiener_Filter", {"window": 3}),
     **{f"jpeg{q}": ("Jpeg", {"quality": q}) for q in (50, 60, 70, 80)},
@@ -50,7 +48,7 @@ DWT_ATTACKS = {
     "jpeg20": ("Jpeg", {"quality": 20, "grayscale": True}),
     "awgn10": ("AWGN", {"sigma": 10 / 255}),
     "awgn20": ("AWGN", {"sigma": 20 / 255}),
-    "salt_pepper1": ("Salt_and_Pepper", {"density": .01}),
+    "salt_pepper1": ("Salt_and_Pepper", {"density": 0.01}),
 }
 DFT_CONDITIONS = (
     [("clean", 0)]
@@ -80,8 +78,7 @@ def load_algorithm(name, backend):
         ("dwarf.ready_solutions", "dwarf/ready_solutions"),
         ("dwarf.ready_solutions.utils", "dwarf/ready_solutions/utils"),
         ("dwarf.ready_solutions.embedding_solutions", "dwarf/ready_solutions/embedding_solutions"),
-        ("dwarf.ready_solutions.embedding_solutions.frequency",
-         "dwarf/ready_solutions/embedding_solutions/frequency"),
+        ("dwarf.ready_solutions.embedding_solutions.frequency", "dwarf/ready_solutions/embedding_solutions/frequency"),
     ):
         module = types.ModuleType(package)
         module.__path__ = [str(ROOT / relative)]
@@ -103,7 +100,7 @@ def load_algorithm(name, backend):
 def rgb_to_ycbcr(image):
     values = image.astype(np.float64)
     red, green, blue = values[..., 0], values[..., 1], values[..., 2]
-    y = .299 * red + .587 * green + .114 * blue
+    y = 0.299 * red + 0.587 * green + 0.114 * blue
     return np.ascontiguousarray(np.stack((y, (blue - y) / 1.772, (red - y) / 1.402), axis=-1))
 
 
@@ -111,8 +108,8 @@ def ycbcr_to_rgb(image):
     y, cb, cr = image[..., 0], image[..., 1], image[..., 2]
     red = y + 1.402 * cr
     blue = y + 1.772 * cb
-    green = (y - .299 * red - .114 * blue) / .587
-    return np.clip(np.floor(np.stack((red, green, blue), axis=-1) + .5), 0, 255).astype(np.uint8)
+    green = (y - 0.299 * red - 0.114 * blue) / 0.587
+    return np.clip(np.floor(np.stack((red, green, blue), axis=-1) + 0.5), 0, 255).astype(np.uint8)
 
 
 def mean(values):
@@ -129,12 +126,17 @@ def run_dct(algorithm, images_dir, output, seed, repeats):
     for name, filename in HOSTS["DCT"].items():
         original = np.asarray(Image.open(images_dir / filename).convert("RGB"), dtype=np.uint8)
         assert original.shape == (512, 512, 3)
-        marked = ycbcr_to_rgb(algorithm.embedding(input_image=rgb_to_ycbcr(original),
-                                                  watermark_bits=bits, strength=16.0))
+        marked = ycbcr_to_rgb(
+            algorithm.embedding(input_image=rgb_to_ycbcr(original), watermark_bits=bits, strength=16.0)
+        )
         for channel in "RGB":
-            channel_rows.append({"image": name, "channel": channel,
-                                 "measured_psnr_db": image_metric("Channel_PSNR", original, marked,
-                                                                  channel=channel)})
+            channel_rows.append(
+                {
+                    "image": name,
+                    "channel": channel,
+                    "measured_psnr_db": image_metric("Channel_PSNR", original, marked, channel=channel),
+                }
+            )
         for label, (attack_name, settings) in DCT_ATTACKS.items():
             observations = []
             for _ in range(repeats if label in stochastic else 1):
@@ -143,15 +145,22 @@ def run_dct(algorithm, images_dir, output, seed, repeats):
                     parameters["seed"] = int(rng.integers(0, 2**63))
                 attacked = attack(marked, attack_name, **parameters)
                 recovered = algorithm.extraction(input_image=rgb_to_ycbcr(attacked), num_bits=bits.size)
-                observations.append({
-                    "psnr": image_metric("PSNR", original, attacked),
-                    "accuracy": bit_metric("Bit_Agreement", bits, recovered),
-                    "ber": bit_metric("BER", bits, recovered),
-                })
-            summary.append({"image": name, "attack": label,
-                            "psnr_db_mean": mean([row["psnr"] for row in observations]),
-                            "accuracy_mean": mean([row["accuracy"] for row in observations]),
-                            "ber_mean": mean([row["ber"] for row in observations])})
+                observations.append(
+                    {
+                        "psnr": image_metric("PSNR", original, attacked),
+                        "accuracy": bit_metric("Bit_Agreement", bits, recovered),
+                        "ber": bit_metric("BER", bits, recovered),
+                    }
+                )
+            summary.append(
+                {
+                    "image": name,
+                    "attack": label,
+                    "psnr_db_mean": mean([row["psnr"] for row in observations]),
+                    "accuracy_mean": mean([row["accuracy"] for row in observations]),
+                    "ber_mean": mean([row["ber"] for row in observations]),
+                }
+            )
         print(f"DCT {name}: complete", flush=True)
     save_csv(output / "table1.csv", channel_rows)
     save_csv(output / "summary.csv", summary)
@@ -164,23 +173,27 @@ def run_dwt(algorithm, images_dir, output, seed, repeats):
         original = np.asarray(Image.open(images_dir / filename).convert("L"), dtype=np.uint8)
         assert original.shape == (512, 512)
         key = seed * 1000 + index
-        bits = np.random.default_rng(np.random.SeedSequence([seed, index, 99])).integers(
-            0, 2, 256, dtype=np.uint8)
+        bits = np.random.default_rng(np.random.SeedSequence([seed, index, 99])).integers(0, 2, 256, dtype=np.uint8)
         embedded = algorithm.embedding(input_image=original, watermark_bits=bits, key=key)
-        marked = np.clip(np.floor(embedded["image"] + .5), 0, 255).astype(np.uint8)
+        marked = np.clip(np.floor(embedded["image"] + 0.5), 0, 255).astype(np.uint8)
         assert np.array_equal(marked.astype(np.float64), embedded["image"])
-        quality.append({"image": name, "psnr_db": image_metric("PSNR", original, marked),
-                        "mssim": image_metric("SSIM", original, marked)})
+        quality.append(
+            {
+                "image": name,
+                "psnr_db": image_metric("PSNR", original, marked),
+                "mssim": image_metric("SSIM", original, marked),
+            }
+        )
         for attack_index, (label, (attack_name, settings)) in enumerate(DWT_ATTACKS.items()):
             observations = []
             for trial in range(repeats if label in stochastic else 1):
                 parameters = dict(settings)
                 if label in stochastic:
-                    parameters["seed"] = int(np.random.SeedSequence(
-                        [seed, index, attack_index, trial]).generate_state(1)[0])
+                    parameters["seed"] = int(
+                        np.random.SeedSequence([seed, index, attack_index, trial]).generate_state(1)[0]
+                    )
                 attacked = attack(marked, attack_name, **parameters)
-                decoded = algorithm.extraction(input_image=attacked, key=key,
-                                               h=embedded["h"], return_details=True)
+                decoded = algorithm.extraction(input_image=attacked, key=key, h=embedded["h"], return_details=True)
                 observations.append(bit_metric("BER", bits, decoded["bits"]))
             summary.append({"image": name, "attack": label, "ber_mean": mean(observations)})
         print(f"DWT {name}: complete", flush=True)
@@ -194,11 +207,11 @@ def dft_attack(image, name, parameter):
     if name == "median":
         return attack(image, "Median_Filter", window=parameter), None
     if name == "jpeg":
-        pixels, bpp, _ = attack(image, "Jpeg", quality=parameter,
-                               grayscale=True, return_stats=True)
+        pixels, bpp, _ = attack(image, "Jpeg", quality=parameter, grayscale=True, return_stats=True)
         return pixels, bpp
-    pixels, bpp, _ = attack(image, "Jpeg2000", compression_ratio=parameter,
-                           grayscale=True, irreversible=False, return_stats=True)
+    pixels, bpp, _ = attack(
+        image, "Jpeg2000", compression_ratio=parameter, grayscale=True, irreversible=False, return_stats=True
+    )
     return pixels, bpp
 
 
@@ -211,24 +224,28 @@ def run_dft(algorithm, images_dir, output, seed, repeats):
         assert original.shape == (512, 512)
         for trial in range(repeats):
             bits = np.random.default_rng(np.random.SeedSequence([seed, index, trial])).integers(
-                0, 2, 64, dtype=np.uint8)
+                0, 2, 64, dtype=np.uint8
+            )
             key = hashlib.sha256(f"dft:{seed}:{name}:{trial}".encode()).digest()
             embedded = algorithm.embedding(input_image=original, watermark_bits=bits, key=key)
             marked = embedded["image"]
-            quality.append({"image": name, "trial": trial,
-                            "psnr_db": image_metric("PSNR", original, marked)})
+            quality.append({"image": name, "trial": trial, "psnr_db": image_metric("PSNR", original, marked)})
             if name == "Lena" and trial == 0:
-                details = algorithm.extraction(input_image=marked, key=key,
-                                               strength=embedded["strength"], return_details=True)
+                details = algorithm.extraction(
+                    input_image=marked, key=key, strength=embedded["strength"], return_details=True
+                )
                 parameters = details["weibull_parameters"]
                 for region in range(16):
-                    weibull.append({"region": region + 1,
-                                    "measured_alpha": float(parameters[region, 0] / original.size),
-                                    "measured_beta": float(parameters[region, 1])})
+                    weibull.append(
+                        {
+                            "region": region + 1,
+                            "measured_alpha": float(parameters[region, 0] / original.size),
+                            "measured_beta": float(parameters[region, 1]),
+                        }
+                    )
             for condition in DFT_CONDITIONS:
                 attacked, bpp = dft_attack(marked, *condition)
-                decoded = algorithm.extraction(input_image=attacked, key=key,
-                                               strength=embedded["strength"])
+                decoded = algorithm.extraction(input_image=attacked, key=key, strength=embedded["strength"])
                 grouped[condition].append((bit_metric("BER", bits, decoded), bpp))
             if (trial + 1) % 16 == 0:
                 print(f"DFT {name}: {trial + 1}/{repeats}", flush=True)
@@ -236,10 +253,16 @@ def run_dft(algorithm, images_dir, output, seed, repeats):
     for (name, parameter), observations in grouped.items():
         assert len(observations) == repeats * len(HOSTS["DFT"])
         bpp = [value for _, value in observations if value is not None]
-        summary.append({"image": "ALL", "attack": name, "parameter": parameter,
-                        "ber": mean([ber for ber, _ in observations]),
-                        "bpp_mean": mean(bpp) if bpp else "",
-                        "total_bits": 64 * len(observations)})
+        summary.append(
+            {
+                "image": "ALL",
+                "attack": name,
+                "parameter": parameter,
+                "ber": mean([ber for ber, _ in observations]),
+                "bpp_mean": mean(bpp) if bpp else "",
+                "total_bits": 64 * len(observations),
+            }
+        )
     save_csv(output / "quality.csv", quality)
     save_csv(output / "weibull.csv", weibull)
     save_csv(output / "summary.csv", summary)
@@ -264,13 +287,18 @@ def main():
     else:
         run_dft(algorithm, images_dir, args.output_dir, args.seed, args.repeats)
     manifest = {
-        "run_kind": f"test_{args.algorithm}", "seed": args.seed, "repeats": args.repeats,
+        "run_kind": f"test_{args.algorithm}",
+        "seed": args.seed,
+        "repeats": args.repeats,
         "backend_dir": str(args.backend_dir.resolve()),
-        "source_sha256": sha256(ROOT / "dwarf/ready_solutions/embedding_solutions/frequency" /
-                                f"{args.algorithm.lower()}.pyx"),
+        "source_sha256": sha256(
+            ROOT / "dwarf/ready_solutions/embedding_solutions/frequency" / f"{args.algorithm.lower()}.pyx"
+        ),
         "paper_sha256": sha256(DATA / f"{args.algorithm.lower()}_paper_reference.json"),
-        "inputs": {name: {"file": filename, "sha256": sha256(images_dir / filename)}
-                   for name, filename in HOSTS[args.algorithm].items()},
+        "inputs": {
+            name: {"file": filename, "sha256": sha256(images_dir / filename)}
+            for name, filename in HOSTS[args.algorithm].items()
+        },
     }
     if args.algorithm == "DCT":
         manifest["watermark_sha256"] = sha256(DATA / "dct_watermark_approx.png")

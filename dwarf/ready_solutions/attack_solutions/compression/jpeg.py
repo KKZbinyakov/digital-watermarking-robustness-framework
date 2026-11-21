@@ -32,6 +32,10 @@ class Jpeg(Ready_Compression_Attacks):
         input_image = args["input_image"]
         quality = int(args["quality"])
 
-        return roundtrip_buffer(input_image, "JPEG", quality=quality,
-                                grayscale=bool(args["grayscale"]),
-                                return_stats=bool(args["return_stats"]))
+        return roundtrip_buffer(
+            input_image,
+            "JPEG",
+            quality=quality,
+            grayscale=bool(args["grayscale"]),
+            return_stats=bool(args["return_stats"]),
+        )

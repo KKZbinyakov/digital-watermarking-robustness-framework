@@ -20,9 +20,7 @@ def attack(image, name, **parameters):
         return image.copy()
     from dwarf.core.attack_orchestrator.attack_core import Attack_Core
 
-    result = Attack_Core.get_attack_class_by_name(name).attack(
-        input_image=rgb(image), **parameters
-    )
+    result = Attack_Core.get_attack_class_by_name(name).attack(input_image=rgb(image), **parameters)
     if isinstance(result, tuple):
         pixels, *stats = result
         return (pixels[..., 0], *stats) if image.ndim == 2 else result
@@ -36,8 +34,7 @@ def metric(name, **parameters):
 
 
 def image_metric(name, original, distorted, **parameters):
-    return metric(name, original_image=rgb(original), distorted_image=rgb(distorted),
-                  **parameters)
+    return metric(name, original_image=rgb(original), distorted_image=rgb(distorted), **parameters)
 
 
 def bit_metric(name, original, extracted):
