@@ -908,6 +908,39 @@ cdef object contourlet_to_luma(object image):
     return result
 
 
+cdef object contourlet_preserve_spatial_moments(object original, object marked, object degree, object seed=2026):
+    """
+    Компенсирует изменение яркостных моментов минимальной пространственной поправкой.
+
+    Args:
+        original: исходное RGB-изображение uint8.
+        marked: изображение после встраивания uint8.
+        degree: максимальный порядок сохраняемых моментов.
+        seed: зерно детерминированного округления поправки.
+
+    Returns:
+        RGB-изображение uint8 с компенсированными моментами.
+    """
+    height, width = original.shape[:2]
+    yy, xx = np.indices((height, width), dtype=np.float64)
+    denominator = max(height, width) / 2.0
+    x = (xx - (width - 1.0) / 2.0) / denominator
+    y = (yy - (height - 1.0) / 2.0) / denominator
+    basis = np.stack(
+        [(x**p * y ** (order - p)).ravel() for order in range(degree + 1) for p in range(order + 1)]
+    )
+    gram = basis @ basis.T
+    difference = (contourlet_to_luma(marked) - contourlet_to_luma(original)).ravel()
+    correction = -(basis.T @ np.linalg.solve(gram, basis @ difference)).reshape((height, width))
+    magnitude = np.abs(correction)
+    integer = np.floor(magnitude)
+    fraction = magnitude - integer
+    stochastic = np.random.default_rng(seed).random(magnitude.shape) < fraction
+    increment = np.sign(correction) * (integer + stochastic)
+    pixels = np.clip(marked.astype(np.float64) + increment[..., None], 0.0, 255.0)
+    return np.ascontiguousarray(pixels.astype(np.uint8))
+
+
 cdef object contourlet_lowpass_analysis(object image, object coefficient_scale=1.0):
     """
     Вычисляет низкочастотную ветвь одной ступени PKVA.
@@ -959,6 +992,19 @@ cdef object contourlet_blocks(object image, object block_size):
     return active.reshape(rows, block_size, columns, block_size).transpose(0, 2, 1, 3)
 
 
+cdef object contourlet_carrier_indices(object num_bits, object rows, object columns, object layout):
+    """Выбирает блоки для последовательного либо распределённого размещения битов."""
+    if layout == "first":
+        return slice(0, num_bits)
+    if layout != "spaced":
+        raise ValueError(f"unsupported carrier layout: {layout!r}")
+    side = int(sqrt(num_bits))
+    if side * side != num_bits or rows != columns or rows % side:
+        raise ValueError("spaced carrier layout requires a square payload dividing a square block grid")
+    positions = np.arange(side, dtype=np.intp) * (rows // side)
+    return (positions[:, None] * columns + positions[None, :]).ravel()
+
+
 cdef object contourlet_adaptive_steps(object blocks, object delta0):
     """
     Вычисляет шаги квантования по формуле исходной реализации.
@@ -973,8 +1019,8 @@ cdef object contourlet_adaptive_steps(object blocks, object delta0):
     energy = np.mean(np.square(blocks, dtype=np.float64), axis=(-2, -1))
 
 
-    energy = np.maximum(energy, 1.0)
-    return np.log2((energy + 1000.0) / 1000.0) * delta0
+    energy = np.maximum(energy, np.finfo(np.float64).tiny)
+    return delta0 + np.log2(1000.0 * energy) / 1000.0
 
 
 cdef object contourlet_embed_core(
@@ -983,6 +1029,7 @@ cdef object contourlet_embed_core(
     object delta0,
     object block_size,
     object max_iterations=6,
+    object carrier_layout="first",
 ):
     """
     Встраивает биты в наибольшие сингулярные значения блоков LL.
@@ -1003,7 +1050,8 @@ cdef object contourlet_embed_core(
     if bits.size > flat.shape[0]:
         raise ValueError(f"Not enough payload capacity: need {bits.size} bits, available {flat.shape[0]}")
 
-    selected = flat[: bits.size]
+    indices = contourlet_carrier_indices(bits.size, carriers.shape[0], carriers.shape[1], carrier_layout)
+    selected = flat[indices].copy()
 
 
     for iteration in range(max_iterations):
@@ -1020,11 +1068,13 @@ cdef object contourlet_embed_core(
             rounded * steps - steps / 2.0,
         )
         selected[:] = (u * singular[:, None, :]) @ vh
+    flat[indices] = selected
     carriers[:] = flat.reshape(carriers.shape)
     return result
 
 
-cdef object contourlet_extract_core(object lowpass, object num_bits, object delta0, object block_size):
+cdef object contourlet_extract_core(object lowpass, object num_bits, object delta0, object block_size,
+                                    object carrier_layout="first"):
     """
     Извлекает биты по чётности квантованных сингулярных значений.
 
@@ -1041,7 +1091,8 @@ cdef object contourlet_extract_core(object lowpass, object num_bits, object delt
     flat = carriers.reshape(-1, block_size, block_size)
     if num_bits > flat.shape[0]:
         raise ValueError(f"Not enough payload capacity: need {num_bits} bits, available {flat.shape[0]}")
-    selected = flat[:num_bits]
+    indices = contourlet_carrier_indices(num_bits, carriers.shape[0], carriers.shape[1], carrier_layout)
+    selected = flat[indices]
     steps = contourlet_adaptive_steps(selected, delta0)
     singular = np.linalg.svd(selected, compute_uv=False)
     quantized = np.ceil(singular[:, 0] / steps).astype(np.int64)
@@ -1161,7 +1212,7 @@ cdef object contourlet_moment_transform(
         mu05_sheared = contourlet_weighted_moment(weights, sheared_x, sheared_y, 0, 5)
         alpha_sign = 1.0 if mu50_sheared >= 0.0 else -1.0
         delta_sign = 1.0 if mu05_sheared >= 0.0 else -1.0
-    elif sign_mode == "positive":
+    elif sign_mode in ("positive", "canonical"):
 
 
         alpha_sign = delta_sign = 1.0
@@ -1181,13 +1232,19 @@ cdef object contourlet_moment_transform(
     denominator = contourlet_weighted_moment(weights, scaled_x, scaled_y, 2, 1) + contourlet_weighted_moment(
         weights, scaled_x, scaled_y, 0, 3
     )
-    if abs(numerator) <= 1e-15 and abs(denominator) <= 1e-15:
+    if sign_mode == "canonical":
+        angle = 0.0 if abs(numerator) <= 1e-15 and abs(denominator) <= 1e-15 else np.arctan2(-numerator, denominator)
+    elif abs(numerator) <= 1e-15 and abs(denominator) <= 1e-15:
         angle = 0.0
     else:
         ratio = np.copysign(np.inf, numerator) if abs(denominator) <= 1e-15 else numerator / denominator
         angle = -np.arctan(ratio)
     rotation = np.array([[np.cos(angle), np.sin(angle)], [-np.sin(angle), np.cos(angle)]])
     oriented = rotation @ scaled
+    if sign_mode == "canonical":
+        oriented_x = oriented[0, 0] * dx + oriented[0, 1] * dy
+        if float(np.sum(weights * oriented_x**5)) < 0.0:
+            oriented[0, :] *= -1.0
 
     output_center = np.array([(output_shape[1] - 1.0) / 2.0, (output_shape[0] - 1.0) / 2.0])
     matrix = target_std * oriented

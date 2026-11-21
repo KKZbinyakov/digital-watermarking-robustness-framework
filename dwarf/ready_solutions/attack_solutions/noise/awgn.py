@@ -22,7 +22,7 @@ class AWGN(Ready_Noise_Attacks):
         Args:
             args (dict): параметры атаки
                 input_image (np.ndarray): матрица изображения
-                sigma (float): стандартное отклонение шума в долях канала 0..1, диапазон [0.001, 0.1] (по умолчанию 0.01)
+                sigma (float): стандартное отклонение шума в долях канала 0..1, диапазон [0.001, 0.2] (по умолчанию 0.01)
                 seed (int): зерно генератора случайных чисел (по умолчанию None)
 
         Returns:
@@ -37,8 +37,8 @@ class AWGN(Ready_Noise_Attacks):
         sigma = float(args["sigma"])
         seed = args["seed"]
 
-        if not 0.001 <= sigma <= 0.1:
-            raise ValueError(f"sigma must be in the range [0.001, 0.1], got {sigma}")
+        if not 0.001 <= sigma <= 0.2:
+            raise ValueError(f"sigma must be in the range [0.001, 0.2], got {sigma}")
 
         rng = np.random.default_rng(seed)
         data = to_matrix(input_image).astype(np.float32) / 255.0

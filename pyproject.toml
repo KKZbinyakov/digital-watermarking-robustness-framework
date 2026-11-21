@@ -42,6 +42,8 @@ dev = [      # Это зависимости для разработки
     "pytest-cov>=4.0",
     "Cython>=3.0.0",
     "setuptools>=42",
+    "scipy>=1.10",
+    "matplotlib>=3.7",
     "ruff>=0.6",
     # Эталонные реализации для сверки решений в tests/expertise и tests/attacks.
     # Список обязан совпадать с requirements-dev.txt.

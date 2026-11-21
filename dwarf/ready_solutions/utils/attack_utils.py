@@ -91,7 +91,7 @@ def save_rgb(array: np.ndarray, output_path: str) -> None:
     to_pil(array).save(output_path)
 
 
-def roundtrip_buffer(image, fmt: str, **save_kwargs) -> np.ndarray:
+def roundtrip_buffer(image, fmt: str, *, grayscale=False, return_stats=False, **save_kwargs):
     """
     Прогоняет изображение через кодек в памяти: кодирует и сразу декодирует.
 
@@ -101,12 +101,23 @@ def roundtrip_buffer(image, fmt: str, **save_kwargs) -> np.ndarray:
     Args:
         image (np.ndarray): матрица изображения формы (H, W, 3)
         fmt (str): имя формата Pillow, например 'JPEG' или 'WEBP'
+        grayscale (bool): кодировать один канал яркости (по умолчанию False)
+        return_stats (bool): вернуть также бит/пиксель и число байт потока
+            (по умолчанию False)
         save_kwargs: параметры кодека, передаваемые в Image.save
 
     Returns:
-        np.ndarray: матрица изображения после кодирования и декодирования
+        np.ndarray | tuple: матрица после декодирования; при return_stats
+            к ней добавляются фактические бит/пиксель и число байт
     """
     buffer = io.BytesIO()
-    to_pil(image).save(buffer, format=fmt, **save_kwargs)
+    source = to_pil(image)
+    if grayscale:
+        source = source.convert("L")
+    source.save(buffer, format=fmt, **save_kwargs)
+    file_bytes = len(buffer.getvalue())
     buffer.seek(0)
-    return to_array(Image.open(buffer))
+    result = to_array(Image.open(buffer))
+    if return_stats:
+        return result, 8 * file_bytes / (source.width * source.height), file_bytes
+    return result

@@ -48,3 +48,5 @@ dwarf/**/*.c
 site/
 docs/
 dwarf_tree.html
+
+/tests/data_embed/results/

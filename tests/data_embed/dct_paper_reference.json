@@ -1,0 +1,180 @@
+{
+  "paper": "Xiangguang Xiong, An Improved DCT Based Color Image Watermarking Scheme (2016)",
+  "url": "https://www.atlantis-press.com/article/25866956.pdf",
+  "table1": {
+    "Airplane": {
+      "R": 40.658,
+      "G": 40.8078,
+      "B": 41.2068
+    },
+    "Lena": {
+      "R": 42.0335,
+      "G": 41.7917,
+      "B": 41.4706
+    },
+    "Peppers": {
+      "R": 41.1149,
+      "G": 41.3376,
+      "B": 41.0394
+    },
+    "Sailboat": {
+      "R": 39.6963,
+      "G": 40.3106,
+      "B": 40.4146
+    }
+  },
+  "table2": {
+    "Airplane": {
+      "gaussian": {
+        "psnr_db": 19.5041,
+        "nc": 0.7869
+      },
+      "salt_pepper": {
+        "psnr_db": 24.0761,
+        "nc": 0.9211
+      },
+      "speckle": {
+        "psnr_db": 21.9728,
+        "nc": 0.8613
+      },
+      "median": {
+        "psnr_db": 33.3195,
+        "nc": 0.928
+      },
+      "wiener": {
+        "psnr_db": 36.1187,
+        "nc": 0.9402
+      },
+      "jpeg50": {
+        "psnr_db": 30.0722,
+        "nc": 0.8
+      },
+      "jpeg60": {
+        "psnr_db": 30.4322,
+        "nc": 0.9187
+      },
+      "jpeg70": {
+        "psnr_db": 31.0294,
+        "nc": 1.0
+      },
+      "jpeg80": {
+        "psnr_db": 31.7654,
+        "nc": 1.0
+      }
+    },
+    "Lena": {
+      "gaussian": {
+        "psnr_db": 19.9188,
+        "nc": 0.7903
+      },
+      "salt_pepper": {
+        "psnr_db": 24.851,
+        "nc": 0.9336
+      },
+      "speckle": {
+        "psnr_db": 24.9619,
+        "nc": 0.9304
+      },
+      "median": {
+        "psnr_db": 33.3099,
+        "nc": 0.9365
+      },
+      "wiener": {
+        "psnr_db": 35.3262,
+        "nc": 0.9707
+      },
+      "jpeg50": {
+        "psnr_db": 31.3173,
+        "nc": 0.7864
+      },
+      "jpeg60": {
+        "psnr_db": 31.5997,
+        "nc": 0.9207
+      },
+      "jpeg70": {
+        "psnr_db": 32.0343,
+        "nc": 1.0
+      },
+      "jpeg80": {
+        "psnr_db": 32.7328,
+        "nc": 1.0
+      }
+    },
+    "Peppers": {
+      "gaussian": {
+        "psnr_db": 19.4781,
+        "nc": 0.7988
+      },
+      "salt_pepper": {
+        "psnr_db": 24.094,
+        "nc": 0.9302
+      },
+      "speckle": {
+        "psnr_db": 25.0089,
+        "nc": 0.9226
+      },
+      "median": {
+        "psnr_db": 31.0158,
+        "nc": 0.9429
+      },
+      "wiener": {
+        "psnr_db": 33.4169,
+        "nc": 0.9624
+      },
+      "jpeg50": {
+        "psnr_db": 28.2122,
+        "nc": 0.7788
+      },
+      "jpeg60": {
+        "psnr_db": 28.5711,
+        "nc": 0.9143
+      },
+      "jpeg70": {
+        "psnr_db": 28.9464,
+        "nc": 0.9919
+      },
+      "jpeg80": {
+        "psnr_db": 29.4273,
+        "nc": 0.9985
+      }
+    },
+    "Sailboat": {
+      "gaussian": {
+        "psnr_db": 19.871,
+        "nc": 0.7952
+      },
+      "salt_pepper": {
+        "psnr_db": 24.454,
+        "nc": 0.9287
+      },
+      "speckle": {
+        "psnr_db": 24.7083,
+        "nc": 0.9165
+      },
+      "median": {
+        "psnr_db": 28.0875,
+        "nc": 0.8701
+      },
+      "wiener": {
+        "psnr_db": 31.1443,
+        "nc": 0.9148
+      },
+      "jpeg50": {
+        "psnr_db": 27.0625,
+        "nc": 0.8428
+      },
+      "jpeg60": {
+        "psnr_db": 27.3784,
+        "nc": 0.9419
+      },
+      "jpeg70": {
+        "psnr_db": 27.7571,
+        "nc": 0.9995
+      },
+      "jpeg80": {
+        "psnr_db": 28.2893,
+        "nc": 1.0
+      }
+    }
+  }
+}

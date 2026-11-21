@@ -148,7 +148,7 @@ class DWT(Ready_Frequency_Embeddings):
         psnr = float("inf") if mse == 0 else 10.0 * log10(65025.0 / mse)
         if automatic and int(np.sum((quantized - image) ** 2)) != expected_sse:
             raise RuntimeError("dwt calibration SSE differs from full Haar synthesis")
-        result = quantized if args["storage"] == "uint8" else floating
+        result = quantized.astype(np.uint8) if args["storage"] == "uint8" else floating
         if not details:
             return result
         return {"image": result, "profile": "dwt-256-T78-v1", "h": h,
