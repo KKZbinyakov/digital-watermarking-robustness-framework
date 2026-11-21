@@ -22,7 +22,7 @@ class Salt_and_Pepper(Ready_Noise_Attacks):
         Args:
             args (dict): параметры атаки
                 input_image (np.ndarray): матрица изображения
-                density (float): суммарная доля повреждённых пикселей, диапазон [0.001, 0.05] (по умолчанию 0.01)
+                density (float): суммарная доля повреждённых пикселей, диапазон [0.001, 0.1] (по умолчанию 0.01)
                 seed (int): зерно генератора случайных чисел (по умолчанию None)
 
         Returns:
@@ -37,8 +37,8 @@ class Salt_and_Pepper(Ready_Noise_Attacks):
         density = float(args["density"])
         seed = args["seed"]
 
-        if not 0.001 <= density <= 0.05:
-            raise ValueError(f"density must be in the range [0.001, 0.05], got {density}")
+        if not 0.001 <= density <= 0.1:
+            raise ValueError(f"density must be in the range [0.001, 0.1], got {density}")
 
         rng = np.random.default_rng(seed)
         data = to_matrix(input_image)
@@ -46,15 +46,11 @@ class Salt_and_Pepper(Ready_Noise_Attacks):
         height, width, _ = data.shape
         num_pixels = height * width
 
-        num_salt = int(np.ceil(density * num_pixels * 0.5))
-        num_pepper = int(np.ceil(density * num_pixels * 0.5))
-
-        salt_rows = rng.integers(0, height, num_salt)
-        salt_cols = rng.integers(0, width, num_salt)
-        data[salt_rows, salt_cols, :] = 255
-
-        pepper_rows = rng.integers(0, height, num_pepper)
-        pepper_cols = rng.integers(0, width, num_pepper)
-        data[pepper_rows, pepper_cols, :] = 0
+        num_corrupted = round(density * num_pixels)
+        num_salt = (num_corrupted + 1) // 2
+        positions = rng.choice(num_pixels, size=num_corrupted, replace=False)
+        pixels = data.reshape(-1, 3)
+        pixels[positions[:num_salt]] = 255
+        pixels[positions[num_salt:]] = 0
 
         return data

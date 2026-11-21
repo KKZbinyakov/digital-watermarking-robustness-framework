@@ -18,11 +18,24 @@ class Jpeg2000(Ready_Compression_Attacks):
             args (dict): параметры атаки
                 input_image (np.ndarray): матрица изображения
                 compression_ratio (float): степень сжатия n:1, больше значение — сильнее сжатие (по умолчанию 20)
+                grayscale (bool): кодировать как одноканальное изображение
+                    (по умолчанию False)
+                irreversible (bool): использовать необратимое преобразование
+                    (по умолчанию True)
+                return_stats (bool): вернуть размер потока и бит/пиксель
+                    вместе с изображением (по умолчанию False)
 
         Returns:
-            np.ndarray: матрица изображения после атаки
+            np.ndarray | tuple: матрица после атаки; при return_stats
+                также бит/пиксель и число байт потока
         """
-        defaults = {"input_image": None, "compression_ratio": 20}
+        defaults = {
+            "input_image": None,
+            "compression_ratio": 20,
+            "grayscale": False,
+            "return_stats": False,
+            "irreversible": True,
+        }
         args = {**defaults, **args}
         input_image = args["input_image"]
         compression_ratio = float(args["compression_ratio"])
@@ -32,5 +45,7 @@ class Jpeg2000(Ready_Compression_Attacks):
             "JPEG2000",
             quality_mode="rates",
             quality_layers=[compression_ratio],
-            irreversible=True,
+            irreversible=bool(args["irreversible"]),
+            grayscale=bool(args["grayscale"]),
+            return_stats=bool(args["return_stats"]),
         )
