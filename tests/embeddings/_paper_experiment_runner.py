@@ -3,6 +3,7 @@
 import argparse
 import csv
 import hashlib
+import importlib
 import importlib.util
 import json
 import sys
@@ -12,13 +13,16 @@ from pathlib import Path
 import numpy as np
 from PIL import Image, features
 
-
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "tests" / "data_embed"
 sys.path.insert(0, str(DATA))
 sys.path.insert(0, str(ROOT))
 
-from experiment_services import attack, bit_metric, image_metric, load_services
+services = importlib.import_module("experiment_services")
+attack = services.attack
+bit_metric = services.bit_metric
+image_metric = services.image_metric
+load_services = services.load_services
 
 
 HOSTS = {
@@ -70,7 +74,7 @@ def save_csv(path, rows):
 
 
 def load_algorithm(name, backend):
-    import dwarf
+    importlib.import_module("dwarf")
 
     for package, relative in (
         ("dwarf.ready_solutions", "dwarf/ready_solutions"),

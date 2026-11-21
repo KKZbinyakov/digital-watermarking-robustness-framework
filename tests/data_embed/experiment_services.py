@@ -1,11 +1,13 @@
 """Adapters from standalone experiments to registered attacks and metrics."""
 
+import importlib
+
 import numpy as np
 
 
 def load_services():
-    import dwarf.ready_solutions.attack_solutions
-    import dwarf.ready_solutions.expertise_solutions
+    importlib.import_module("dwarf.ready_solutions.attack_solutions")
+    importlib.import_module("dwarf.ready_solutions.expertise_solutions")
 
 
 def rgb(image):
