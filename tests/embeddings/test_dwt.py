@@ -1,17 +1,18 @@
 """Recompute DWT article experiments and compare every NCQM value."""
 
-import sys
 from pathlib import Path
 
 import pytest
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _paper_agreement import assert_max_delta, csv_rows, index_rows, run_evidence
+from ._paper_support import assert_max_delta, csv_rows, index_rows, run_evidence
+
+SPEC = Path(__file__).resolve().parents[2] / "examples" / "paper_verification" / "dwt.yaml"
 
 
 @pytest.fixture(scope="module")
 def evidence(tmp_path_factory):
-    result_dir, paper = run_evidence("DWT", tmp_path_factory)
+    result_dir, spec = run_evidence(SPEC, tmp_path_factory)
+    paper, agreement = spec["reference"], spec["agreement"]
     quality = index_rows(csv_rows(result_dir, "quality.csv"), ("image",))
     attacks = index_rows(csv_rows(result_dir, "summary.csv"), ("image", "attack"))
     assert {image for (image,) in quality} == set(paper["mssim_table7_text"])
@@ -22,35 +23,40 @@ def evidence(tmp_path_factory):
         for attack in values["NCQM"]
     }
     assert expected <= set(attacks)
-    return paper, quality, attacks
+    return paper, agreement, quality, attacks
 
 
 def test_quality_psnr_42_db(evidence):
     """Four article hosts are calibrated to 42 dB."""
-    _, quality, _ = evidence
-    assert_max_delta(((image, row["psnr_db"], 42.0) for (image,), row in quality.items()), 0.001, "DWT clean PSNR (dB)")
+    _, agreement, quality, _ = evidence
+    target = agreement["clean_psnr_db"]
+    assert_max_delta(
+        ((image, row["psnr_db"], target["target"]) for (image,), row in quality.items()),
+        target["limit"],
+        "DWT clean PSNR (dB)",
+    )
 
 
 def test_quality_mssim(evidence):
     """All four published MSSIM values."""
-    paper, quality, _ = evidence
+    paper, agreement, quality, _ = evidence
     assert_max_delta(
         ((image, quality[(image,)]["mssim"], reference) for image, reference in paper["mssim_table7_text"].items()),
-        0.0007,
+        agreement["mssim"]["limit"],
         "DWT MSSIM",
     )
 
 
-@pytest.mark.parametrize("table,limit", [("table7", 2.35), ("table8", 1.95)])
-def test_ber_tables(evidence, table, limit):
+@pytest.mark.parametrize("table", ("table7", "table8"))
+def test_ber_tables(evidence, table):
     """Compare every NCQM BER with the run in percentage points, not BER fractions."""
-    paper, _, attacks = evidence
+    paper, agreement, _, attacks = evidence
     assert_max_delta(
         (
             (f"{image}/{attack}", 100 * float(attacks[image, attack]["ber_mean"]), reference)
             for image, values in paper[table].items()
             for attack, reference in values["NCQM"].items()
         ),
-        limit,
+        agreement["ber_percentage_points"][table],
         f"DWT {table} BER (percentage points)",
     )

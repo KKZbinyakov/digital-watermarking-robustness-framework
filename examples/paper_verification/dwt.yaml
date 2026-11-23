@@ -1,0 +1,162 @@
+schema_version: 1
+experiment:
+  algorithm: DWT
+  seed: 2026
+  repeats: 10
+  source: dwarf/ready_solutions/embedding_solutions/frequency/dwt.pyx
+  images_dir: tests/data_embed/images/DWT
+  image_mode: L
+  image_shape:
+  - 512
+  - 512
+  hosts:
+    Peppers:
+      file: 4.2.07.tiff
+      sha256: 676c21edcc56b517ebd54764d6026d2befe7e15014ec3f0c9e6f2ce1d9ad74bf
+    Baboon:
+      file: 4.2.03.tiff
+      sha256: 3f590b52279fb59b81906f1e928ae713a5357b1afc1a2017a103adb563fb4494
+    Barbara:
+      file: barbara.pgm
+      sha256: a395b8a380d4e0a2c0e46353c154aa02f626564c5a1bdc3e79528a74114fec0f
+    Lena:
+      file: 4.2.04.tiff
+      sha256: c056da23302d2fb0d946e7ffa11e0d94618224193ff6e2f78ef8097bb8a3569b
+  watermark:
+    bit_count: 256
+    seed_sequence_suffix: 99
+    key_multiplier: 1000
+  attacks:
+    clean:
+      name: clean
+      params: {}
+      stochastic: false
+    vsa1.5:
+      name: Brightness_Contrast
+      params:
+        brightness: 1.5
+        contrast: 1.0
+      stochastic: false
+    gaussian5:
+      name: Gaussian_Blur
+      params:
+        sigma: 1.1
+        window: 5
+      stochastic: false
+    median3:
+      name: Median_Filter
+      params:
+        window: 3
+      stochastic: false
+    jpeg11:
+      name: Jpeg
+      params:
+        quality: 11
+        grayscale: true
+      stochastic: false
+    jpeg20:
+      name: Jpeg
+      params:
+        quality: 20
+        grayscale: true
+      stochastic: false
+    awgn10:
+      name: AWGN
+      params:
+        sigma: 0.0392156862745098
+      stochastic: true
+    awgn20:
+      name: AWGN
+      params:
+        sigma: 0.0784313725490196
+      stochastic: true
+    salt_pepper1:
+      name: Salt_and_Pepper
+      params:
+        density: 0.01
+      stochastic: true
+  outputs:
+  - quality.csv
+  - summary.csv
+  - manifest.json
+agreement:
+  clean_psnr_db:
+    target: 42.0
+    limit: 0.001
+  mssim:
+    limit: 0.0007
+  ber_percentage_points:
+    table7: 2.35
+    table8: 1.95
+reference:
+  paper: Zhu et al., Normalized Correlation-Based Quantization Modulation for Robust Watermarking, IEEE TMM 2014,
+    DOI 10.1109/TMM.2014.2340695
+  scope: Wavelet implementation for 256-bit message, PSNR 42 dB, Tables VII and VIII
+  units: BER percent
+  table7:
+    Peppers:
+      NCQM:
+        vsa1.5: 0
+        gaussian5: 0
+        median3: 0
+        jpeg11: 10.16
+        jpeg20: 1.17
+        awgn20: 4.3
+        salt_pepper1: 2.73
+    Baboon:
+      NCQM:
+        vsa1.5: 0
+        gaussian5: 0.78
+        median3: 2.73
+        jpeg11: 1.95
+        jpeg20: 0
+        awgn20: 3.13
+        salt_pepper1: 0
+    Barbara:
+      NCQM:
+        vsa1.5: 0
+        gaussian5: 0
+        median3: 1.17
+        jpeg11: 4.69
+        jpeg20: 0
+        awgn20: 3.52
+        salt_pepper1: 0.78
+    Lena:
+      NCQM:
+        vsa1.5: 0
+        gaussian5: 0
+        median3: 0
+        jpeg11: 9.77
+        jpeg20: 0
+        awgn20: 4.3
+        salt_pepper1: 0.78
+  table8:
+    Peppers:
+      NCQM:
+        median3: 0
+        jpeg11: 10.16
+        awgn10: 0
+        salt_pepper1: 2.73
+    Baboon:
+      NCQM:
+        median3: 2.73
+        jpeg11: 1.95
+        awgn10: 0
+        salt_pepper1: 0
+    Barbara:
+      NCQM:
+        median3: 1.17
+        jpeg11: 4.69
+        awgn10: 0.39
+        salt_pepper1: 0.78
+    Lena:
+      NCQM:
+        median3: 0
+        jpeg11: 9.77
+        awgn10: 0
+        salt_pepper1: 0.78
+  mssim_table7_text:
+    Peppers: 0.9793
+    Baboon: 0.9932
+    Barbara: 0.9845
+    Lena: 0.9783

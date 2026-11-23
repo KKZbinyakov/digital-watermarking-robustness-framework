@@ -1,0 +1,310 @@
+schema_version: 1
+experiment:
+  algorithm: DFT
+  seed: 2026
+  repeats: 64
+  source: dwarf/ready_solutions/embedding_solutions/frequency/dft.pyx
+  images_dir: tests/data_embed/images/DFT
+  image_mode: L
+  image_shape:
+  - 512
+  - 512
+  hosts:
+    Lena:
+      file: 4.2.04.tiff
+      sha256: c056da23302d2fb0d946e7ffa11e0d94618224193ff6e2f78ef8097bb8a3569b
+    Tiffany:
+      file: 4.2.02.tiff
+      sha256: 8618c061ef5e0d8668441e350ffd47d1fed563c1c38a9f911ab2f80da6a3188d
+    Lake:
+      file: 4.2.06.tiff
+      sha256: aa00ff3defadcd99e2e5fb5fbd06d12d6570284822a37186e3f8827f9bb4ca73
+  watermark:
+    bit_count: 64
+    key_namespace: dft
+  weibull:
+    host: Lena
+    trial: 0
+    regions: 16
+  attacks:
+    clean:
+      name: clean
+      parameters:
+      - 0
+    median:
+      name: Median_Filter
+      parameter_name: window
+      parameters:
+      - 3
+      - 5
+      - 7
+    jpeg:
+      name: Jpeg
+      parameter_name: quality
+      parameters:
+      - 1
+      - 3
+      - 5
+      - 8
+      - 12
+      - 18
+      - 25
+      - 35
+      - 50
+      - 75
+      fixed_params:
+        grayscale: true
+        return_stats: true
+      records_bpp: true
+    jpeg2000:
+      name: Jpeg2000
+      parameter_name: compression_ratio
+      parameters:
+      - 8
+      - 12
+      - 16
+      - 24
+      - 32
+      - 48
+      - 64
+      - 96
+      - 128
+      fixed_params:
+        grayscale: true
+        irreversible: false
+        return_stats: true
+      records_bpp: true
+  outputs:
+  - quality.csv
+  - weibull.csv
+  - summary.csv
+  - manifest.json
+agreement:
+  clean_psnr_db:
+    target: 45.0
+    limit: 0.001
+  weibull:
+    alpha: 0.023
+    beta: 0.29
+  figure3_log10_ber:
+    jpeg:
+      limit: 0.5
+      point_count: 9
+    jpeg2000:
+      limit: 1.48
+      point_count: 8
+  median3_text_ber:
+    attack: median
+    parameter: 3
+    limit: 0.00052
+reference:
+  paper: Barni, Bartolini, De Rosa, Piva, Optimum Decoding and Detection of Multiplicative Watermarks, IEEE TSP
+    2003, DOI 10.1109/TSP.2003.809371
+  table1:
+    description: Exact printed Weibull alpha and beta for 16 DFT subregions of Lena; article p. 1120
+    alpha:
+    - 0.056
+    - 0.069
+    - 0.059
+    - 0.028
+    - 0.03
+    - 0.043
+    - 0.033
+    - 0.015
+    - 0.057
+    - 0.056
+    - 0.04
+    - 0.027
+    - 0.033
+    - 0.032
+    - 0.024
+    - 0.016
+    beta:
+    - 1.82
+    - 1.79
+    - 1.79
+    - 1.79
+    - 1.88
+    - 1.88
+    - 1.63
+    - 1.85
+    - 2.01
+    - 2.04
+    - 1.88
+    - 1.82
+    - 1.85
+    - 1.85
+    - 1.85
+    - 1.92
+  figure1:
+    description: Approximate visual digitization of Figure 1, Monte Carlo simulation; not tabulated by authors
+    psnr_db:
+    - 45.7
+    - 46.9
+    - 48.4
+    - 50.3
+    - 52.4
+    - 55.0
+    gamma:
+    - 0.28
+    - 0.24
+    - 0.2
+    - 0.16
+    - 0.12
+    - 0.08
+    ber_approx:
+    - 1.0e-07
+    - 4.5e-06
+    - 9.0e-05
+    - 0.0013
+    - 0.012
+    - 0.07
+  figure2:
+    description: Approximate visual digitization of Figure 2; not tabulated by authors
+    psnr_db:
+    - 49.4
+    - 50.3
+    - 51.3
+    - 52.4
+    - 53.8
+    gamma:
+    - 0.18
+    - 0.16
+    - 0.14
+    - 0.12
+    - 0.1
+    monte_carlo_ber_approx:
+    - 0.0004
+    - 0.00145
+    - 0.0042
+    - 0.0135
+    - 0.036
+    empirical_ber_approx:
+    - 0.00055
+    - 0.0016
+    - 0.0054
+    - 0.016
+    - 0.043
+  figure3:
+    description: Approximate visual digitization of Figure 3; graph has no published point table
+    bpp_approx:
+    - 0.065
+    - 0.09
+    - 0.14
+    - 0.2
+    - 0.3
+    - 0.4
+    - 0.5
+    - 0.65
+    - 0.8
+    - 1.0
+    jpeg_ber_approx:
+    - 0.4
+    - 0.32
+    - 0.19
+    - 0.09
+    - 0.033
+    - 0.012
+    - 0.003
+    - 0.00065
+    - 9.0e-05
+    - 5.5e-05
+    jpeg2000_ber_approx:
+    - 0.35
+    - 0.27
+    - 0.14
+    - 0.075
+    - 0.035
+    - 0.017
+    - 0.006
+    - 0.002
+    - 0.0005
+    - 0.00012
+  figure4:
+    description: Approximate visual digitization of Figure 4, 256x256 Lena, 24 bits; Hernandez comparison is reproduced
+      from this article
+    bpp_approx:
+    - 0.895
+    - 0.995
+    - 1.018
+    - 1.045
+    - 1.105
+    barni_ber_approx:
+    - 0.008
+    - 0.0065
+    - 0.0045
+    - 0.003
+    - 0.0023
+    hernandez_ber_approx:
+    - 0.25
+    - 0.2
+    - 0.1
+    - 0.03
+    - 0.0007
+  table2:
+    description: Exact printed false detection rates, article p. 1122
+    target_pf_clt:
+    - 0.1
+    - 0.01
+    - 0.001
+    - 0.0001
+    - 1.0e-05
+    actual_pf_mc:
+    - 0.087
+    - 0.0071
+    - 0.0012
+    - 0.00043
+    - 6.8e-05
+  table3:
+    description: Exact printed attack thresholds, article p. 1122; average row is printed separately
+    images:
+    - Baboon
+    - Boat
+    - Bridge
+    - Couple
+    - f16
+    - Harbor
+    - House
+    - Lake
+    - New York
+    - Tiffany
+    jpeg_min_bpp:
+    - 0.2
+    - 0.2
+    - 0.2
+    - 0.2
+    - 0.2
+    - 0.2
+    - 0.2
+    - 0.2
+    - 0.3
+    - 0.2
+    jpeg2000_min_bpp:
+    - 0.14
+    - 0.18
+    - 0.21
+    - 0.16
+    - 0.19
+    - 0.21
+    - 0.17
+    - 0.18
+    - 0.21
+    - 0.15
+    median_max_window:
+    - 5
+    - 5
+    - 5
+    - 5
+    - 3
+    - 5
+    - 5
+    - 5
+    - 5
+    - 5
+    printed_average:
+      jpeg_min_bpp: 0.21
+      jpeg2000_min_bpp: 0.18
+      median_max_window: 4.8
+  median3_text_ber: 0.0003
+  note: All *_approx arrays are read from printed graphs and are approximate. Table values and caption settings
+    are printed numerically by the authors.

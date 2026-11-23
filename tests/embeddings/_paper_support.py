@@ -1,4 +1,4 @@
-"""Build frequency algorithms and compare independently measured article points."""
+"""Build frequency algorithms and compare runs with YAML paper protocols."""
 
 import csv
 import hashlib
@@ -10,6 +10,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[2]
 DATA = ROOT / "tests" / "data_embed"
 _BACKEND_DIR = None
@@ -18,6 +20,15 @@ _TEMP_BUILD = None
 
 def sha256(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def load_spec(path):
+    """Load one standalone experiment protocol and its published values."""
+    path = Path(path).resolve()
+    spec = yaml.safe_load(path.read_text(encoding="utf-8"))
+    assert isinstance(spec, dict) and spec.get("schema_version") == 1, f"invalid paper protocol: {path}"
+    assert spec["experiment"]["algorithm"] in ("DCT", "DWT", "DFT"), f"unsupported paper protocol: {path}"
+    return spec
 
 
 def build_backend():
@@ -49,27 +60,25 @@ def build_backend():
     return output
 
 
-def run_evidence(algorithm, tmp_path_factory):
+def run_evidence(spec_path, tmp_path_factory):
     """Run the article protocol without loading any report generator."""
+    spec_path = Path(spec_path).resolve()
+    spec = load_spec(spec_path)
+    experiment = spec["experiment"]
+    algorithm = experiment["algorithm"]
     backend_dir = build_backend()
     result_dir = tmp_path_factory.mktemp(f"{algorithm.lower()}_paper_run")
     assert not any(result_dir.iterdir()), f"experiment directory is not empty: {result_dir}"
-    paper_path = DATA / f"{algorithm.lower()}_paper_reference.json"
-    repeats = {"DCT": 10, "DWT": 10, "DFT": 64}[algorithm]
     command = [
         sys.executable,
         "-u",
-        str(Path(__file__).with_name("_paper_experiment_runner.py")),
-        "--algorithm",
-        algorithm,
+        str(DATA / "paper_experiment_runner.py"),
+        "--config",
+        str(spec_path),
         "--output-dir",
         str(result_dir),
         "--backend-dir",
         str(backend_dir),
-        "--repeats",
-        str(repeats),
-        "--seed",
-        "2026",
     ]
     environment = os.environ.copy()
     environment["PYTHONIOENCODING"] = "utf-8"
@@ -80,27 +89,26 @@ def run_evidence(algorithm, tmp_path_factory):
         f"fresh {algorithm} experiment failed (exit {completed.returncode})\n"
         f"stdout:\n{completed.stdout}\nstderr:\n{completed.stderr}"
     )
-    expected = {
-        "DCT": {"table1.csv", "summary.csv", "manifest.json"},
-        "DWT": {"quality.csv", "summary.csv", "manifest.json"},
-        "DFT": {"quality.csv", "weibull.csv", "summary.csv", "manifest.json"},
-    }[algorithm]
+    expected = set(experiment["outputs"])
     assert {path.name for path in result_dir.iterdir()} == expected
     manifest = json.loads((result_dir / "manifest.json").read_text(encoding="utf-8"))
     assert manifest["run_kind"] == f"test_{algorithm}"
-    assert manifest["seed"] == 2026
-    assert manifest["repeats"] == repeats
+    assert manifest["seed"] == experiment["seed"]
+    assert manifest["repeats"] == experiment["repeats"]
     assert Path(manifest["backend_dir"]).resolve() == backend_dir.resolve()
-    source = ROOT / "dwarf" / "ready_solutions" / "embedding_solutions" / "frequency" / f"{algorithm.lower()}.pyx"
+    source = ROOT / experiment["source"]
     assert sha256(source) == manifest["source_sha256"]
-    assert sha256(paper_path) == manifest["paper_sha256"]
-    paper = json.loads(paper_path.read_text(encoding="utf-8"))
+    assert sha256(spec_path) == manifest["config_sha256"]
+    assert set(manifest["inputs"]) == set(experiment["hosts"])
     for name, info in manifest["inputs"].items():
-        host = DATA / "images" / algorithm / info["file"]
-        assert sha256(host) == info["sha256"], f"host image changed: {name}"
-    if algorithm == "DCT":
-        assert sha256(DATA / "dct_watermark_approx.png") == manifest["watermark_sha256"]
-    return result_dir, paper
+        expected_host = experiment["hosts"][name]
+        assert info["file"] == expected_host["file"]
+        host = ROOT / experiment["images_dir"] / info["file"]
+        assert sha256(host) == expected_host["sha256"] == info["sha256"], f"host image changed: {name}"
+    watermark = experiment["watermark"]
+    if "file" in watermark:
+        assert sha256(ROOT / watermark["file"]) == watermark["sha256"] == manifest["watermark_sha256"]
+    return result_dir, spec
 
 
 def csv_rows(result_dir, filename):

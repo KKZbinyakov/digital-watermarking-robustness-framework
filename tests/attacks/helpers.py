@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from PIL import features
 
-import dwarf.ready_solutions.attack_solutions  # noqa: F401 - imports populate the registry
+import dwarf.ready_solutions.attack_solutions  # noqa: F401 — imports populate the registry
 from dwarf.core.attack_orchestrator.attack_core import Attack_Core
 
 EXPECTED_ATTACKS = frozenset(
