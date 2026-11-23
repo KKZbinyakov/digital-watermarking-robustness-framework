@@ -1,4 +1,4 @@
-"""Атака сжатия JPEG: блочное ДКП с квантованием коэффициентов."""
+"""Атака сжатия JPEG — блочное ДКП с квантованием коэффициентов."""
 
 from dwarf.core.attack_orchestrator.attack_core import Ready_Compression_Attacks
 from dwarf.ready_solutions.utils.attack_utils import roundtrip_buffer

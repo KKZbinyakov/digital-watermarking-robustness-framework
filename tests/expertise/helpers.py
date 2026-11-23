@@ -2,7 +2,7 @@
 
 import numpy as np
 
-import dwarf.ready_solutions.expertise_solutions  # noqa: F401  registers metrics
+import dwarf.ready_solutions.expertise_solutions  # noqa: F401 registers metrics
 from dwarf.core.expertise_orchestrator.expertise_core import Expertise_Core
 
 IMPERCEPTIBILITY_METRICS = frozenset(

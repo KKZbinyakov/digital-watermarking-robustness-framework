@@ -39,7 +39,7 @@ class NC(Ready_Robustness_Expertise):
             raise ValueError("nothing to compare: both bit strings are empty")
 
         # Watermarking papers, including Wu et al. (IEEE Access, 2023),
-        # define NC directly over binary pixels.  Mapping 0/1 to -1/+1
+        # define NC directly over binary pixels. Mapping 0/1 to -1/+1
         # changes the reported values into 1 - 2 * BER and therefore makes
         # the framework results incomparable with the paper tables.
         original = bits_to_array(original_bits).astype(np.float64, copy=False)

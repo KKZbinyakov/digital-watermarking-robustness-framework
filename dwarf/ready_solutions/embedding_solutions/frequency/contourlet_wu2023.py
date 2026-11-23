@@ -192,7 +192,7 @@ def _adaptive_steps(blocks: np.ndarray, delta0: float) -> np.ndarray:
     """Equation (7): Delta=log2((E_block+1000)/1000)*Delta_0."""
     energy = np.mean(np.square(blocks, dtype=np.float64), axis=(-2, -1))
     # Exact black blocks make the published expression zero and therefore
-    # cannot be quantized.  A one-level energy floor is the limiting digital
+    # cannot be quantized. A one-level energy floor is the limiting digital
     # case and only affects blocks that carry no image information at all.
     energy = np.maximum(energy, 1.0)
     return np.log2((energy + 1000.0) / 1000.0) * delta0
