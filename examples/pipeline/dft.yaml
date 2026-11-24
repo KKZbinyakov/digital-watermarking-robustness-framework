@@ -1,102 +1,3 @@
-schema_version: 1
-experiment:
-  algorithm: DFT
-  seed: 2026
-  repeats: 64
-  source: dwarf/ready_solutions/embedding_solutions/frequency/dft.pyx
-  images_dir: tests/data_embed/images/DFT
-  image_mode: L
-  image_shape:
-  - 512
-  - 512
-  hosts:
-    Lena:
-      file: 4.2.04.tiff
-      sha256: c056da23302d2fb0d946e7ffa11e0d94618224193ff6e2f78ef8097bb8a3569b
-    Tiffany:
-      file: 4.2.02.tiff
-      sha256: 8618c061ef5e0d8668441e350ffd47d1fed563c1c38a9f911ab2f80da6a3188d
-    Lake:
-      file: 4.2.06.tiff
-      sha256: aa00ff3defadcd99e2e5fb5fbd06d12d6570284822a37186e3f8827f9bb4ca73
-  watermark:
-    bit_count: 64
-    key_namespace: dft
-  weibull:
-    host: Lena
-    trial: 0
-    regions: 16
-  attacks:
-    clean:
-      name: clean
-      parameters:
-      - 0
-    median:
-      name: Median_Filter
-      parameter_name: window
-      parameters:
-      - 3
-      - 5
-      - 7
-    jpeg:
-      name: Jpeg
-      parameter_name: quality
-      parameters:
-      - 1
-      - 3
-      - 5
-      - 8
-      - 12
-      - 18
-      - 25
-      - 35
-      - 50
-      - 75
-      fixed_params:
-        grayscale: true
-        return_stats: true
-      records_bpp: true
-    jpeg2000:
-      name: Jpeg2000
-      parameter_name: compression_ratio
-      parameters:
-      - 8
-      - 12
-      - 16
-      - 24
-      - 32
-      - 48
-      - 64
-      - 96
-      - 128
-      fixed_params:
-        grayscale: true
-        irreversible: false
-        return_stats: true
-      records_bpp: true
-  outputs:
-  - quality.csv
-  - weibull.csv
-  - summary.csv
-  - manifest.json
-agreement:
-  clean_psnr_db:
-    target: 45.0
-    limit: 0.001
-  weibull:
-    alpha: 0.023
-    beta: 0.29
-  figure3_log10_ber:
-    jpeg:
-      limit: 0.5
-      point_count: 9
-    jpeg2000:
-      limit: 1.48
-      point_count: 8
-  median3_text_ber:
-    attack: median
-    parameter: 3
-    limit: 0.00052
 reference:
   paper: Barni, Bartolini, De Rosa, Piva, Optimum Decoding and Detection of Multiplicative Watermarks, IEEE TSP
     2003, DOI 10.1109/TSP.2003.809371
@@ -308,3 +209,103 @@ reference:
   median3_text_ber: 0.0003
   note: All *_approx arrays are read from printed graphs and are approximate. Table values and caption settings
     are printed numerically by the authors.
+
+schema_version: 1
+experiment:
+  algorithm: DFT
+  seed: 2026
+  repeats: 64
+  source: dwarf/ready_solutions/embedding_solutions/frequency/dft.pyx
+  images_dir: tests/data_embed/images/DFT
+  image_mode: L
+  image_shape:
+  - 512
+  - 512
+  hosts:
+    Lena:
+      file: 4.2.04.tiff
+      sha256: c056da23302d2fb0d946e7ffa11e0d94618224193ff6e2f78ef8097bb8a3569b
+    Tiffany:
+      file: 4.2.02.tiff
+      sha256: 8618c061ef5e0d8668441e350ffd47d1fed563c1c38a9f911ab2f80da6a3188d
+    Lake:
+      file: 4.2.06.tiff
+      sha256: aa00ff3defadcd99e2e5fb5fbd06d12d6570284822a37186e3f8827f9bb4ca73
+  watermark:
+    bit_count: 64
+    key_namespace: dft
+  weibull:
+    host: Lena
+    trial: 0
+    regions: 16
+  attacks:
+    clean:
+      name: clean
+      parameters:
+      - 0
+    median:
+      name: Median_Filter
+      parameter_name: window
+      parameters:
+      - 3
+      - 5
+      - 7
+    jpeg:
+      name: Jpeg
+      parameter_name: quality
+      parameters:
+      - 1
+      - 3
+      - 5
+      - 8
+      - 12
+      - 18
+      - 25
+      - 35
+      - 50
+      - 75
+      fixed_params:
+        grayscale: true
+        return_stats: true
+      records_bpp: true
+    jpeg2000:
+      name: Jpeg2000
+      parameter_name: compression_ratio
+      parameters:
+      - 8
+      - 12
+      - 16
+      - 24
+      - 32
+      - 48
+      - 64
+      - 96
+      - 128
+      fixed_params:
+        grayscale: true
+        irreversible: false
+        return_stats: true
+      records_bpp: true
+  outputs:
+  - quality.csv
+  - weibull.csv
+  - summary.csv
+  - manifest.json
+agreement:
+  clean_psnr_db:
+    target: 45.0
+    limit: 0.001
+  weibull:
+    alpha: 0.023
+    beta: 0.29
+  figure3_log10_ber:
+    jpeg:
+      limit: 0.5
+      point_count: 9
+    jpeg2000:
+      limit: 1.48
+      point_count: 8
+  median3_text_ber:
+    attack: median
+    parameter: 3
+    limit: 0.00052
