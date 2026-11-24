@@ -7,7 +7,7 @@ import pytest
 
 from ._paper_support import assert_max_delta, csv_rows, finite, index_rows, run_evidence
 
-SPEC = Path(__file__).resolve().parents[2] / "examples" / "pipeline" / "dft.yaml"
+SPEC = Path(__file__).resolve().parents[2] / "examples" / "pipeline" / "paper_verification" / "dft.yaml"
 
 
 @pytest.fixture(scope="module")
