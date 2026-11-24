@@ -83,6 +83,6 @@ def export_metrics(run_dir: Path, database: str = "results.sqlite3"):
 
     print(f"CSV: {target.resolve()}")
     print(
-        f"Кейсы: done={statuses['done']}, failed={statuses['failed']}, "
-        f"dispatching={statuses['dispatching']}. Измерений: {measurements}."
+        f"Cases: done={statuses['done']}, failed={statuses['failed']}, "
+        f"dispatching={statuses['dispatching']}. Measurements: {measurements}."
     )
