@@ -33,6 +33,15 @@ class SQLite_DB:
             """
         )
 
+        self.conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS operation_paths (
+                path_id INTEGER PRIMARY KEY,
+                operations_json TEXT NOT NULL UNIQUE
+            )
+            """
+        )
+
     def open_db(self, db_path: str):
         self.conn = sqlite3.connect(
             db_path,
@@ -62,6 +71,7 @@ class SQLite_DB:
                 try:
                     self.conn.execute("DELETE FROM cases")
                     self.conn.execute("DELETE FROM processed_images")
+                    self.conn.execute("DELETE FROM operation_paths")
                     self.conn.execute("COMMIT")
                 except Exception as e:
                     logger.error_with_context(e)
@@ -96,3 +106,18 @@ class SQLite_DB:
                 logger.error_with_context(e)
                 self.conn.execute("ROLLBACK")
                 raise
+
+    def get_or_create_path_id(self, operations_json: str) -> int:
+        self.require_conn()
+        with self.lock:
+            row = self.conn.execute(
+                """
+                INSERT INTO operation_paths (operations_json)
+                VALUES (?)
+                ON CONFLICT(operations_json) DO UPDATE
+                    SET operations_json = excluded.operations_json
+                RETURNING path_id
+                """,
+                (operations_json,),
+            ).fetchone()
+            return row[0]

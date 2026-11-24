@@ -178,16 +178,35 @@ def test_live_pipeline_persists_metrics_and_resumes(
     rows = _database_rows(database_path)
     assert len(rows) == expected_cases
     assert all(status == "done" and error is None for status, _, error in rows)
+    with closing(sqlite3.connect(database_path)) as connection:
+        known_paths = {row[0] for row in connection.execute("SELECT path_id FROM operation_paths")}
+
     clean_metrics = 0
     for status, result_json, _ in rows:
         assert status == "done"
         metrics = json.loads(result_json)["metrics"]
         assert set(metrics) == {"embedding-mse", "attack-mse", "ber"}
-        assert all(math.isfinite(value) and value >= 0 for value in metrics.values())
-        assert 0 <= metrics["ber"] <= 1
-        if metrics["attack-mse"] == 0 and metrics["ber"] == 0:
+
+        for entry in metrics.values():
+            assert set(entry) == {"value", "path_id"}
+            assert entry["path_id"] in known_paths
+            assert math.isfinite(entry["value"]) and entry["value"] >= 0
+
+        assert 0 <= metrics["ber"]["value"] <= 1
+        if metrics["attack-mse"]["value"] == 0 and metrics["ber"]["value"] == 0:
             clean_metrics += 1
+
     assert clean_metrics >= expected_cases // 2
+    # clean_metrics = 0
+    # for status, result_json, _ in rows:
+    #     assert status == "done"
+    #     metrics = json.loads(result_json)["metrics"]
+    #     assert set(metrics) == {"embedding-mse", "attack-mse", "ber"}
+    #     assert all(math.isfinite(value) and value >= 0 for value in metrics.values())
+    #     assert 0 <= metrics["ber"] <= 1
+    #     if metrics["attack-mse"] == 0 and metrics["ber"] == 0:
+    #         clean_metrics += 1
+    # assert clean_metrics >= expected_cases // 2
 
     # Resume without overwrite: completed cases remain unchanged in the database.
     config = yaml.safe_load(config_path.read_text(encoding="utf-8"))

@@ -18,6 +18,7 @@ from dwarf.pipeline_core.config import ImagePreprocessingSpec
 from dwarf.pipeline_core.config_loader import ExperimentConfig
 from dwarf.pipeline_core.db import SQLite_DB
 from dwarf.pipeline_core.execution import resolve_in_flight, resolve_start_method, resolve_workers
+from dwarf.pipeline_core.export_metrics import export_metrics
 from dwarf.pipeline_core.worker import init_worker, run_case
 
 
@@ -170,7 +171,10 @@ class Parent:
         self.queue_free = mp.Queue(maxsize=64)
         self.stop_event = mp.Event()
 
-        self.pending: dict[Future, Case] = {}
+        # self.pending: dict[Future, Case] = {}
+
+        self.pending: dict[Future, tuple[Case, dict[str, int]]] = {}
+
         self.registry: dict[str, dict] = {}
         self.inflight_count = 0
         self.result_buffer = []
@@ -312,6 +316,34 @@ class Parent:
         if new_failed_batch is not None:
             self.retry_batches[new_failed_batch] = 1
 
+    def resolve_metric_paths(self, case: Case) -> dict[str, int]:
+        if not case.metrics:
+            return {}
+
+        operations = [("embedding", case.embedding_name, dict(case.embedding_params))]
+        operations.extend(("attack", step.name, dict(step.params)) for step in case.attack_chain)
+        after_attack = len(operations)
+        operations.append(("extraction", case.extraction_name, dict(case.extraction_params)))
+
+        prefix_lengths = {
+            "after_embedding": 1,
+            "after_attack": after_attack,
+            "after_extraction": len(operations),
+        }
+
+        metric_paths = {}
+        for metric in case.metrics:
+            length = prefix_lengths[metric.checkpoint]
+            operations_json = json.dumps(
+                operations[:length],
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+            metric_paths[metric.id] = self.db.get_or_create_path_id(operations_json)
+
+        return metric_paths
+
     def dispatcher_loop(self):
         while not self.shutdown_event.is_set():
             try:
@@ -351,9 +383,13 @@ class Parent:
                     while self.inflight_count >= self.max_in_flight:
                         self.window_cond.wait()
 
+                path_ids = self.resolve_metric_paths(case)
                 fut = self.executor.submit(run_case, case)
                 with self.pending_lock:
-                    self.pending[fut] = case
+                    self.pending[fut] = (case, path_ids)
+                # fut = self.executor.submit(run_case, case)
+                # with self.pending_lock:
+                #     self.pending[fut] = case
                 with self.window_cond:
                     self.inflight_count += 1
 
@@ -375,9 +411,15 @@ class Parent:
 
             for fut in done:
                 with self.pending_lock:
-                    case = self.pending.pop(fut, None)
-                if case is None:
+                    item = self.pending.pop(fut, None)
+                if item is None:
                     continue
+
+                case, path_ids = item
+                # with self.pending_lock:
+                #     case = self.pending.pop(fut, None)
+                # if case is None:
+                #     continue
 
                 try:
                     result = fut.result()
@@ -390,7 +432,19 @@ class Parent:
                     error = str(e)
                     metrics = {}
 
-                payload = json.dumps({"metrics": metrics}, ensure_ascii=False)
+                payload = json.dumps(
+                    {
+                        "metrics": {
+                            metric_id: {
+                                "value": value,
+                                "path_id": path_ids[metric_id],
+                            }
+                            for metric_id, value in metrics.items()
+                        }
+                    },
+                    ensure_ascii=False,
+                )
+                # payload = json.dumps({"metrics": metrics}, ensure_ascii=False)
                 # logger.log(f"metrics: {metrics} for case {case.case_id}")
                 self.result_buffer.append((case.case_id, status, payload, error))
 
@@ -440,3 +494,9 @@ class Parent:
                 )
             else:
                 logger.log("Ended pipeline!")
+
+        if "csv" in self.config.output.exports:
+            export_metrics(
+                run_dir=self.config.output.directory,
+                database=self.config.output.database_filename,
+            )
